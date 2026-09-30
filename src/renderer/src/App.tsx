@@ -99,14 +99,14 @@ function App(): React.JSX.Element {
   }, [loadNetworkPreferences, loadThemeSource, loadInitialPaths, checkForUpdate])
 
   const handleNewDownload = (): void => {
-    if (currentDownload) void window.plexo.removeDownload(currentDownload.id)
+    if (currentDownload) void window.uncapped.removeDownload(currentDownload.id)
     clearCurrentDownload()
   }
 
   const handleDownloadAgain = (): void => {
     if (currentDownload) {
       const url = currentDownload.url
-      void window.plexo.removeDownload(currentDownload.id)
+      void window.uncapped.removeDownload(currentDownload.id)
       clearCurrentDownload()
       useAppStore.getState().setDraftUrl(url)
     }

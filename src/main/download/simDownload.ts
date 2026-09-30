@@ -8,10 +8,11 @@ import type { ChunkDownloadOptions } from './chunkDownloader'
  * `DownloadManager` treats `requestPayload.url` as opaque, so this prefix is the only thing
  * that has to recognize a simulated download and route it to `downloadChunkSimulated` instead
  * of the real HTTP `downloadChunk`. */
-const SIM_URL_PREFIX = 'plexo-sim://'
+const SIM_URL_PREFIX = 'uncapped-sim://'
+const LEGACY_SIM_URL_PREFIX = 'plexo-sim://'
 
 export function isSimulatedUrl(url: string): boolean {
-  return url.startsWith(SIM_URL_PREFIX)
+  return url.startsWith(SIM_URL_PREFIX) || url.startsWith(LEGACY_SIM_URL_PREFIX)
 }
 
 interface SimSession {
@@ -24,7 +25,7 @@ interface SimSession {
 
 const sessions = new Map<string, SimSession>()
 
-/** Registers one dev-tool "virtual download" run and returns the `plexo-sim://<token>` url to
+/** Registers one dev-tool "virtual download" run and returns the `uncapped-sim://<token>` url to
  * use as its `StartDownloadRequest.url` — everything downstream (blocks, chunks, persistence,
  * the assembling phase) is unaware this isn't a real network transfer. */
 function registerSimSession(
@@ -39,7 +40,8 @@ function registerSimSession(
 
 export function unregisterSimSession(url: string): void {
   if (!isSimulatedUrl(url)) return
-  sessions.delete(url.slice(SIM_URL_PREFIX.length))
+  const prefix = url.startsWith(SIM_URL_PREFIX) ? SIM_URL_PREFIX : LEGACY_SIM_URL_PREFIX
+  sessions.delete(url.slice(prefix.length))
 }
 
 /** How slowly `DownloadManager.reassemble()` should stitch this simulated download's part

@@ -50,7 +50,7 @@ async function openNetworkSettings(): Promise<void> {
 }
 
 /** Typed wrapper around ipcMain.handle — the channel name picks its args/result shape out of
- * IpcContract, so a handler here that doesn't match what plexoApi (preload) actually calls is a
+ * IpcContract, so a handler here that doesn't match what uncappedApi (preload) actually calls is a
  * compile error instead of a silent runtime mismatch. */
 function handle<K extends keyof IpcContract>(
   channel: K,

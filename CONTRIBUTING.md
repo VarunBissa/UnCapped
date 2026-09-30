@@ -5,8 +5,8 @@ Thanks for taking a look at UnCapped. It's a small project, so the process is in
 ## Setup
 
 ```bash
-git clone https://github.com/anmolkapil/plexo.git
-cd plexo
+git clone https://github.com/VarunBissa/UnCapped.git
+cd UnCapped
 npm install
 npm run dev
 ```
@@ -30,16 +30,16 @@ Please describe how you checked your change manually (which URL/file size/interf
 
 ## End-to-end tests
 
-`e2e/` drives the real built app through the same `window.plexo` API the renderer uses, against a local test server that can drop, stall, corrupt or hold any response at an exact byte. Every test also runs automatic checks: a `completed` download must match the source byte for byte, and anything else must leave no file, part files or open handles behind. The app's window stays hidden while tests run.
+`e2e/` drives the real built app through the same `window.uncapped` API the renderer uses, against a local test server that can drop, stall, corrupt or hold any response at an exact byte. Every test also runs automatic checks: a `completed` download must match the source byte for byte, and anything else must leave no file, part files or open handles behind. The app's window stays hidden while tests run.
 
 ```bash
 npm run test:e2e:smoke          # what CI runs on every PR (~1 min)
 npm run test:e2e                # everything, including @disk and @chaos
-PLEXO_CHAOS_RUNS=50 npx playwright test e2e/chaos.spec.ts   # more random sequences
-PLEXO_CHAOS_SEED=<seed> npx playwright test e2e/chaos.spec.ts  # replay a chaos failure
+UNCAPPED_CHAOS_RUNS=50 npx playwright test e2e/chaos.spec.ts   # more random sequences
+UNCAPPED_CHAOS_SEED=<seed> npx playwright test e2e/chaos.spec.ts  # replay a chaos failure
 ```
 
-Tests build the app first; set `PLEXO_E2E_SKIP_BUILD=1` when `out/` is already fresh. Known bugs are written as `test.fail(...)` — when a fix lands, Playwright reports the test as unexpectedly passing, and the marker comes off. Retries are deliberately off: a download test that passes only on a retry has found a race.
+Tests build the app first; set `UNCAPPED_E2E_SKIP_BUILD=1` when `out/` is already fresh. Known bugs are written as `test.fail(...)` — when a fix lands, Playwright reports the test as unexpectedly passing, and the marker comes off. Retries are deliberately off: a download test that passes only on a retry has found a race.
 
 ## Making changes
 

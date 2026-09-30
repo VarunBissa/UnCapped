@@ -139,7 +139,7 @@ interface Attempt {
   /** Set once this attempt has been chosen to finish the block, so a near-simultaneous finisher
    * can tell it lost. */
   won: boolean
-  /** What the server's answer cost, for diagnosing slow connections (see PLEXO_DEBUG). */
+  /** What the server's answer cost, for diagnosing slow connections (see UNCAPPED_DEBUG). */
   response: { ttfbMs: number; reusedSocket: boolean } | null
   /** Resolves once the request is over and its file closed. */
   settled: Promise<void>
@@ -226,7 +226,7 @@ interface PersistedDownload {
   activeInterfaces: NetworkInterfaceInfo[]
 }
 
-// Set UNCAPPED_DEBUG=1 (or PLEXO_DEBUG=1) to log every request's outcome, how long the server took to answer and
+// Set UNCAPPED_DEBUG=1 to log every request's outcome, how long the server took to answer and
 // whether it reused a warm connection — what it takes to tell one slow connection from a slow path.
 const debug: (...args: unknown[]) => void =
   process.env['UNCAPPED_DEBUG'] || process.env['PLEXO_DEBUG']

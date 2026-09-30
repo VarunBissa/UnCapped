@@ -161,7 +161,7 @@ test.describe('UI journeys @smoke', () => {
 })
 
 test.describe('no networks', () => {
-  test.use({ appEnv: { PLEXO_E2E_INTERFACES: '' } })
+  test.use({ appEnv: { UNCAPPED_E2E_INTERFACES: '', PLEXO_E2E_INTERFACES: '' } })
 
   test('shows the no-connections screen, and settles on it @smoke', async ({ plexo }) => {
     await plexo.evaluateMain(({ ipcMain }) => {
@@ -187,6 +187,7 @@ test.describe('no networks', () => {
     await expect(plexo.page.getByText('No networks to combine')).toBeVisible()
     await plexo.evaluateMain(
       (_electron, value) => {
+        process.env['UNCAPPED_E2E_INTERFACES'] = value
         process.env['PLEXO_E2E_INTERFACES'] = value
       },
       interfacesEnv({ a: NETWORKS['a'] })

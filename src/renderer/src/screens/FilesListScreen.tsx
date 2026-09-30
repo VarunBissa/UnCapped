@@ -122,7 +122,7 @@ export function FilesListScreen({
   }, [downloads])
 
   const handleDownloadAgain = (item: DownloadState): void => {
-    void window.plexo.removeDownload(item.id)
+    void window.uncapped.removeDownload(item.id)
     removeDownloadFromList(item.id)
     useAppStore.getState().setDraftUrl(item.url)
     useAppStore.getState().setActiveView('idle')
@@ -434,7 +434,7 @@ export function FilesListScreen({
                                   variant="outline"
                                   size="xs"
                                   onClick={() => {
-                                    void window.plexo.pauseDownload(item.id)
+                                    void window.uncapped.pauseDownload(item.id)
                                     updateDownloadStatus(item.id, 'paused')
                                   }}
                                   className="h-7 px-2 font-mono text-[10px] text-foreground hover:bg-muted"
@@ -457,7 +457,7 @@ export function FilesListScreen({
                                   variant="default"
                                   size="xs"
                                   onClick={() => {
-                                    void window.plexo.resumeDownload(item.id)
+                                    void window.uncapped.resumeDownload(item.id)
                                     updateDownloadStatus(item.id, 'downloading')
                                   }}
                                   className="h-7 px-2 font-mono text-[10px]"
@@ -525,7 +525,7 @@ export function FilesListScreen({
                                       dir !== '.'
                                         ? `${dir.replace(/[\\/]$/, '')}/${item.fileName}`
                                         : item.destinationPath
-                                    void window.plexo.revealInFolder(pathToReveal)
+                                    void window.uncapped.revealInFolder(pathToReveal)
                                   }}
                                   className="h-7 px-2 text-muted-foreground hover:text-foreground"
                                 >
@@ -614,7 +614,7 @@ export function FilesListScreen({
               <button
                 type="button"
                 onClick={() => {
-                  void window.plexo.pauseDownload(contextMenu.download.id)
+                  void window.uncapped.pauseDownload(contextMenu.download.id)
                   updateDownloadStatus(contextMenu.download.id, 'paused')
                   setContextMenu(null)
                 }}
@@ -635,7 +635,7 @@ export function FilesListScreen({
                   if (contextMenu.download.status === 'cancelled') {
                     handleDownloadAgain(contextMenu.download)
                   } else {
-                    void window.plexo.resumeDownload(contextMenu.download.id)
+                    void window.uncapped.resumeDownload(contextMenu.download.id)
                     updateDownloadStatus(contextMenu.download.id, 'downloading')
                   }
                   setContextMenu(null)
@@ -681,7 +681,7 @@ export function FilesListScreen({
                     dir !== '.'
                       ? `${dir.replace(/[\\/]$/, '')}/${contextMenu.download.fileName}`
                       : contextMenu.download.destinationPath
-                  void window.plexo.revealInFolder(pathToReveal)
+                  void window.uncapped.revealInFolder(pathToReveal)
                   setContextMenu(null)
                 }}
                 className="flex w-full items-center gap-2 rounded-[5px] px-2.5 py-1.5 text-[12px] font-medium text-foreground hover:bg-muted transition-colors text-left cursor-pointer"
@@ -750,7 +750,7 @@ export function FilesListScreen({
               <AlertDialogAction
                 className={buttonVariants({ variant: 'destructive', size: 'sm' })}
                 onClick={() => {
-                  void window.plexo.deleteDownload(
+                  void window.uncapped.deleteDownload(
                     downloadToRemove.id,
                     downloadToRemove.destinationPath,
                     false,

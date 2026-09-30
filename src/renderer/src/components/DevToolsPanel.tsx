@@ -68,7 +68,7 @@ export function DevToolsPanel(): React.JSX.Element | null {
   // reach this component's state directly, so it round-trips through IPC instead.
   useEffect(() => {
     if (!isDev) return
-    return window.plexo.onToggleDevToolsPanel(() => setOpen((v) => !v))
+    return window.uncapped.onToggleDevToolsPanel(() => setOpen((v) => !v))
   }, [isDev])
 
   if (!isDev) return null
@@ -76,12 +76,12 @@ export function DevToolsPanel(): React.JSX.Element | null {
   const effectiveDestinationDir = destinationDir || downloadsDir
 
   const handleChooseFile = async (): Promise<void> => {
-    const chosen = await window.plexo.chooseSourceFile()
+    const chosen = await window.uncapped.chooseSourceFile()
     if (chosen) setSourceFilePath(chosen)
   }
 
   const handleChooseDestination = async (): Promise<void> => {
-    const chosen = await window.plexo.chooseDestinationFolder(effectiveDestinationDir)
+    const chosen = await window.uncapped.chooseDestinationFolder(effectiveDestinationDir)
     if (chosen) setDestinationDir(chosen)
   }
 
@@ -114,7 +114,7 @@ export function DevToolsPanel(): React.JSX.Element | null {
         speedBytesPerSec: Math.max(1, Math.round(n.speedMbps * MBPS_TO_BYTES_PER_SEC)),
         faultRatePercent: Math.min(100, Math.max(0, n.faultRatePercent))
       }))
-      await window.plexo.startSimulatedDownload({
+      await window.uncapped.startSimulatedDownload({
         sourceFilePath,
         destinationDir: effectiveDestinationDir,
         networks: simulatedNetworks,

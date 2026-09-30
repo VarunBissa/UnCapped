@@ -9,8 +9,8 @@ export function ShutdownCountdownDialog(): React.JSX.Element | null {
   } | null>(null)
 
   useEffect(() => {
-    if (!window.plexo?.onShutdownCountdown) return
-    const cleanup = window.plexo.onShutdownCountdown((payload) => {
+    if (!window.uncapped?.onShutdownCountdown) return
+    const cleanup = window.uncapped.onShutdownCountdown((payload) => {
       setCountdown(payload)
     })
     return cleanup
@@ -20,7 +20,7 @@ export function ShutdownCountdownDialog(): React.JSX.Element | null {
 
   const handleCancel = async (): Promise<void> => {
     try {
-      await window.plexo.cancelShutdown()
+      await window.uncapped.cancelShutdown()
     } catch {
       // ignore
     }

@@ -30,7 +30,7 @@ export function LatencyShieldToggle(): React.JSX.Element {
     >
       {latencyShieldEnabled ? (
         <>
-          <div className="size-1.5 shrink-0 rounded-full bg-emerald-400 animate-[plexo-glow_1.5s_ease-in-out_infinite]" />
+          <div className="size-1.5 shrink-0 rounded-full bg-emerald-400 animate-[uncapped-glow_1.5s_ease-in-out_infinite]" />
           <ShieldCheck className="size-3.5 text-emerald-400" />
           <span className="hidden sm:inline">Shield ON</span>
           <span className="sm:hidden">Shield</span>

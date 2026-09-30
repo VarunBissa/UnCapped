@@ -122,9 +122,9 @@ export function SpeedTestButton(): React.JSX.Element {
 
     if (
       currentDownload?.fileName?.startsWith('UnCapped-SpeedTest-') ||
-      currentDownload?.fileName?.startsWith('Plexo-SpeedTest-')
+      currentDownload?.fileName?.startsWith('UnCapped-SpeedTest-')
     ) {
-      void window.plexo.removeDownload(currentDownload.id).catch(() => {})
+      void window.uncapped.removeDownload(currentDownload.id).catch(() => {})
     }
 
     if (selectedIds.length === 0) {
@@ -141,7 +141,7 @@ export function SpeedTestButton(): React.JSX.Element {
 
       for (const url of selectedSize.urls) {
         try {
-          probe = await window.plexo.probeUrl(url)
+          probe = await window.uncapped.probeUrl(url)
           if (probe) break
         } catch (err) {
           lastErr = err instanceof Error ? err : new Error(String(err))
@@ -152,7 +152,7 @@ export function SpeedTestButton(): React.JSX.Element {
         throw lastErr || new Error('Could not connect to speed test server.')
       }
 
-      await window.plexo.startDownload({
+      await window.uncapped.startDownload({
         url: probe.finalUrl,
         destinationDir: downloadsDir || homeDir,
         suggestedFileName: `UnCapped-SpeedTest-${selectedSize.sizeLabel}.bin`,
@@ -196,7 +196,7 @@ export function SpeedTestButton(): React.JSX.Element {
       let testUrl = selectedSize.urls[0]
       for (const u of selectedSize.urls) {
         try {
-          const probe = await window.plexo.probeUrl(u)
+          const probe = await window.uncapped.probeUrl(u)
           if (probe && probe.finalUrl) {
             testUrl = probe.finalUrl
             break
@@ -206,7 +206,7 @@ export function SpeedTestButton(): React.JSX.Element {
         }
       }
       setBenchmarkStatus('Sampling individual networks & bonded aggregate…')
-      const result = await window.plexo.runComparisonSpeedTest(testUrl, selectedIds)
+      const result = await window.uncapped.runComparisonSpeedTest(testUrl, selectedIds)
       setComparisonResult(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to complete benchmark')

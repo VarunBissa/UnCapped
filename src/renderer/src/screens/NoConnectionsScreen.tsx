@@ -35,7 +35,7 @@ export function NoConnectionsScreen(): React.JSX.Element {
           <Button
             type="button"
             variant="secondary"
-            onClick={() => window.plexo.openNetworkSettings()}
+            onClick={() => window.uncapped.openNetworkSettings()}
           >
             Network Settings…
           </Button>

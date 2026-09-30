@@ -26,7 +26,7 @@ function setCorsHeaders(req: IncomingMessage, res: ServerResponse): void {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-UnCapped-Token, X-Plexo-Token, Access-Control-Request-Private-Network'
+    'Content-Type, Authorization, X-UnCapped-Token, Access-Control-Request-Private-Network'
   )
   res.setHeader('Access-Control-Allow-Private-Network', 'true')
 }

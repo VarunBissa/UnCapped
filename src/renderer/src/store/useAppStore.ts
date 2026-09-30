@@ -62,9 +62,9 @@ export interface SpeedTestResult {
 const SPEED_HISTORY_LENGTH = 60
 const SPEED_SAMPLE_INTERVAL_MS = 1000
 const DOWNLOAD_HISTORY_KEY = 'uncapped:download_history'
-const LEGACY_DOWNLOAD_HISTORY_KEY = 'plexo:download_history'
+const LEGACY_DOWNLOAD_HISTORY_KEY = 'uncapped:download_history'
 const SPEED_TEST_RESULT_KEY = 'uncapped:last_speed_test'
-const LEGACY_SPEED_TEST_RESULT_KEY = 'plexo:last_speed_test'
+const LEGACY_SPEED_TEST_RESULT_KEY = 'uncapped:last_speed_test'
 
 function loadSavedSpeedTestResult(): SpeedTestResult | null {
   try {
@@ -102,9 +102,9 @@ function loadSavedDownloads(): DownloadState[] {
     const filtered = parsed.filter((item) => {
       const isSpeed =
         item.fileName?.startsWith('UnCapped-SpeedTest-') ||
-        item.fileName?.startsWith('Plexo-SpeedTest-')
+        item.fileName?.startsWith('UnCapped-SpeedTest-')
       if (isSpeed && item.destinationPath) {
-        void window.plexo?.deleteDownload(item.id, item.destinationPath, true)
+        void window.uncapped?.deleteDownload(item.id, item.destinationPath, true)
       }
       return !isSpeed
     })
@@ -276,7 +276,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       currentDownload: get().currentDownload?.id === id ? null : get().currentDownload,
       selectedDownload: get().selectedDownload?.id === id ? null : get().selectedDownload
     })
-    void window.plexo.removeDownload(id).catch(() => {})
+    void window.uncapped.removeDownload(id).catch(() => {})
   },
   updateDownloadStatus: (id, status) => {
     const nextFileList = get().fileList.map((item) =>
@@ -310,7 +310,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const previous = get().interfaces
     const wasReady = get().interfacesStatus === 'ready'
     try {
-      const interfaces = await window.plexo.listInterfaces()
+      const interfaces = await window.uncapped.listInterfaces()
       if (wasReady && previous.length > 0) {
         const prevIds = new Set(previous.map((i) => i.id))
         const nextIds = new Set(interfaces.map((i) => i.id))
@@ -338,7 +338,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   refreshLatencies: async () => {
     try {
-      const latencies = await window.plexo.pingInterfaces()
+      const latencies = await window.uncapped.pingInterfaces()
       set({ latencies })
     } catch {
       // Latency is a nice-to-have readout — a failed probe just leaves stale values.
@@ -348,7 +348,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   loadInitialPaths: async () => {
     set({ pathsStatus: 'loading' })
     try {
-      const { homeDir, downloadsDir, isDev } = await window.plexo.getInitialPaths()
+      const { homeDir, downloadsDir, isDev } = await window.uncapped.getInitialPaths()
       set((state) => ({
         homeDir,
         downloadsDir,
@@ -363,7 +363,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   loadNetworkPreferences: async () => {
     try {
-      const networkPreferences = await window.plexo.getNetworkPreferences()
+      const networkPreferences = await window.uncapped.getNetworkPreferences()
       set({ networkPreferences })
     } catch {
       // Best-effort — a failed read just leaves networks under their OS names/default colors.
@@ -380,7 +380,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     }))
     try {
-      const networkPreferences = await window.plexo.setNetworkPreference(id, patch)
+      const networkPreferences = await window.uncapped.setNetworkPreference(id, patch)
       set({ networkPreferences })
     } catch {
       // Leave the optimistic value in place — not persisted to disk, but still usable this session.
@@ -389,7 +389,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   loadThemeSource: async () => {
     try {
-      const themeSource = await window.plexo.getThemeSource()
+      const themeSource = await window.uncapped.getThemeSource()
       applyTheme(themeSource)
       set({ themeSource })
     } catch {
@@ -402,7 +402,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     applyTheme(themeSource)
     set({ themeSource })
     try {
-      await window.plexo.setThemeSource(themeSource)
+      await window.uncapped.setThemeSource(themeSource)
     } catch {
       // Leave the optimistic value in place — not persisted to disk, but still usable this session.
     }
@@ -410,7 +410,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   checkForUpdate: async () => {
     try {
-      const availableUpdate = await window.plexo.checkForUpdate()
+      const availableUpdate = await window.uncapped.checkForUpdate()
       set({ availableUpdate })
     } catch {
       // Best-effort — a failed check just leaves the banner hidden.
@@ -422,7 +422,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (!update) return
     // Keeps the update visible as a quiet titlebar icon rather than clearing it outright.
     set({ availableUpdate: { ...update, dismissed: true } })
-    void window.plexo.dismissUpdate(update.version)
+    void window.uncapped.dismissUpdate(update.version)
   },
 
   setCurrentDownload: (download) => {
@@ -459,7 +459,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     const isSpeedTest =
       download.fileName.startsWith('UnCapped-SpeedTest-') ||
-      download.fileName.startsWith('Plexo-SpeedTest-')
+      download.fileName.startsWith('UnCapped-SpeedTest-')
 
     if (download.status === 'completed' && isSpeedTest) {
       const durationMs = Math.max(
@@ -494,7 +494,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       persistSpeedTestResult(result)
 
       // Automatically remove the temporary speed test file permanently from disk and manager
-      void window.plexo.deleteDownload(download.id, download.destinationPath, true)
+      void window.uncapped.deleteDownload(download.id, download.destinationPath, true)
 
       set({ lastSpeedTestResult: result })
     }
@@ -510,7 +510,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         label: 'Open Folder',
         onClick: () => {
           if (download.destinationPath) {
-            void window.plexo.revealInFolder(download.destinationPath)
+            void window.uncapped.revealInFolder(download.destinationPath)
           }
         }
       })

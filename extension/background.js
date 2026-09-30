@@ -1,4 +1,4 @@
-const PLEXO_BRIDGE_URL = 'http://127.0.0.1:23851'
+const UNCAPPED_BRIDGE_URL = 'http://127.0.0.1:23851'
 
 // Default configuration settings
 const DEFAULT_CONFIG = {
@@ -52,14 +52,14 @@ function parsePath(fullPath) {
 }
 
 async function getConfig() {
-  const result = await chrome.storage.local.get(['plexoConfig'])
-  return { ...DEFAULT_CONFIG, ...(result.plexoConfig || {}) }
+  const result = await chrome.storage.local.get(['uncappedConfig', 'plexoConfig'])
+  return { ...DEFAULT_CONFIG, ...(result.uncappedConfig || result.plexoConfig || {}) }
 }
 
 let lastHealthCheck = 0
 let cachedHealth = false
 
-async function isPlexoHealthy() {
+async function isUnCappedHealthy() {
   const now = Date.now()
   if (cachedHealth && now - lastHealthCheck < 3000) {
     return true
@@ -67,7 +67,7 @@ async function isPlexoHealthy() {
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 1000)
-    const res = await fetch(`${PLEXO_BRIDGE_URL}/health`, { signal: controller.signal })
+    const res = await fetch(`${UNCAPPED_BRIDGE_URL}/health`, { signal: controller.signal })
     clearTimeout(timer)
     if (!res.ok) {
       cachedHealth = false
@@ -95,8 +95,8 @@ async function getCookiesForUrl(url) {
   }
 }
 
-async function sendDownloadToPlexo(payload) {
-  const res = await fetch(`${PLEXO_BRIDGE_URL}/download`, {
+async function sendDownloadToUnCapped(payload) {
+  const res = await fetch(`${UNCAPPED_BRIDGE_URL}/download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -142,7 +142,7 @@ async function handleFinalizedDownload(downloadId, explicitFullPath, inlinePendi
   const { destinationDir, fileName } = parsePath(fullPath)
 
   try {
-    const result = await sendDownloadToPlexo({
+    const result = await sendDownloadToUnCapped({
       url: pending.url,
       fileName: fileName || pending.fileName,
       destinationDir,
@@ -168,7 +168,7 @@ async function handleFinalizedDownload(downloadId, explicitFullPath, inlinePendi
 // Respond to popup status queries
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'CHECK_HEALTH') {
-    isPlexoHealthy().then((online) => {
+    isUnCappedHealthy().then((online) => {
       sendResponse({ online })
     })
     return true // Keep channel open for async response
@@ -202,7 +202,7 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
   }
 
   // Check if UnCapped is active and running
-  const online = await isPlexoHealthy()
+  const online = await isUnCappedHealthy()
   if (!online) {
     // UnCapped is offline: let Chrome download normally without interruption
     return
@@ -296,11 +296,11 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
   const targetUrl = info.linkUrl || info.srcUrl
   if (!targetUrl) return
 
-  const online = await isPlexoHealthy()
+  const online = await isUnCappedHealthy()
   if (!online) return
 
   const cookies = await getCookiesForUrl(targetUrl)
-  await sendDownloadToPlexo({
+  await sendDownloadToUnCapped({
     url: targetUrl,
     cookies
   }).catch((err) => console.error('[UnCapped] Context menu download error:', err))

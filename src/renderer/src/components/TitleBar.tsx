@@ -19,7 +19,7 @@ export interface TitleBarNavButton {
   badge?: number | string
 }
 
-const isMac = window.plexo.platform === 'darwin'
+const isMac = window.uncapped.platform === 'darwin'
 
 const pillClass =
   'h-auto flex items-center gap-[7px] rounded-full px-2.5 py-1 font-mono text-[10px] leading-none font-semibold tracking-[0.08em] uppercase whitespace-nowrap'
@@ -96,7 +96,7 @@ export function TitleBar({
           className={pillClass}
         >
           <div
-            className={`${pillDotClass} bg-[var(--color-wifi)] animate-[plexo-glow_2s_ease-in-out_infinite]`}
+            className={`${pillDotClass} bg-[var(--color-wifi)] animate-[uncapped-glow_2s_ease-in-out_infinite]`}
           />
           {status.networkCount} {status.networkCount === 1 ? 'network' : 'networks'} combined
         </ColorBadge>
@@ -109,7 +109,7 @@ export function TitleBar({
           className={pillClass}
         >
           <div
-            className={`${pillDotClass} bg-[var(--color-ethernet)] animate-[plexo-glow_1s_ease-in-out_infinite]`}
+            className={`${pillDotClass} bg-[var(--color-ethernet)] animate-[uncapped-glow_1s_ease-in-out_infinite]`}
           />
           Assembling file…
         </ColorBadge>

@@ -7,9 +7,9 @@ export function useDownloadEvents(): void {
 
   useEffect(() => {
     let disposed = false
-    const unsubscribe = window.plexo.onDownloadUpdated(setCurrentDownload)
+    const unsubscribe = window.uncapped.onDownloadUpdated(setCurrentDownload)
 
-    void window.plexo
+    void window.uncapped
       .getCurrentDownload()
       .then((download) => {
         if (!disposed && download) setCurrentDownload(download)

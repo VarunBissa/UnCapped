@@ -14,8 +14,6 @@ If your machine is connected to multiple networks at once — for example:
 
 UnCapped pools their bandwidth together to download the **same file** concurrently at combined speeds.
 
-https://github.com/user-attachments/assets/e57728f4-fb63-441f-839c-174eef954b17
-
 ---
 
 ## ⚠️ Before you start

@@ -20,7 +20,7 @@ type ProbeState =
 
 const PROBE_DEBOUNCE_MS = 600
 const PRESET_STREAMS = [1, 2, 4, 8] as const
-const PASTE_SHORTCUT = window.plexo.platform === 'darwin' ? '⌘V' : 'Ctrl+V'
+const PASTE_SHORTCUT = window.uncapped.platform === 'darwin' ? '⌘V' : 'Ctrl+V'
 
 const fieldLabelClass = 'shrink-0 font-mono text-[10px] tracking-[0.14em] text-muted-foreground'
 
@@ -96,7 +96,7 @@ export function IdleScreen(): React.JSX.Element {
   useEffect(() => {
     const checkClipboard = async (): Promise<void> => {
       try {
-        const text = (await window.plexo.readClipboardText())?.trim()
+        const text = (await window.uncapped.readClipboardText())?.trim()
         if (
           text &&
           (text.startsWith('http://') ||
@@ -138,7 +138,7 @@ export function IdleScreen(): React.JSX.Element {
     setFileNameOverride(null)
     const timer = setTimeout(async () => {
       try {
-        const result = await window.plexo.probeUrl(trimmed)
+        const result = await window.uncapped.probeUrl(trimmed)
         if (probeRequestId.current !== requestId) return
         setProbe({ status: 'ready', result })
       } catch (error) {
@@ -212,17 +212,17 @@ export function IdleScreen(): React.JSX.Element {
   }
 
   const handleBrowse = async (): Promise<void> => {
-    const chosen = await window.plexo.chooseDestinationFolder(effectiveDestinationDir)
+    const chosen = await window.uncapped.chooseDestinationFolder(effectiveDestinationDir)
     if (chosen) setDestinationDir(chosen)
   }
 
   const handlePaste = async (): Promise<void> => {
-    const text = await window.plexo.readClipboardText()
+    const text = await window.uncapped.readClipboardText()
     if (text.trim()) setUrl(text.trim())
   }
 
   const handleSelectTorrent = async (): Promise<void> => {
-    const chosen = await window.plexo.chooseTorrentFile()
+    const chosen = await window.uncapped.chooseTorrentFile()
     if (chosen) setUrl(chosen)
   }
 
@@ -231,7 +231,7 @@ export function IdleScreen(): React.JSX.Element {
     setStarting(true)
     setStartError(null)
     try {
-      await window.plexo.startDownload({
+      await window.uncapped.startDownload({
         url: probe.result.finalUrl,
         destinationDir,
         suggestedFileName: fileNameOverride?.trim() || probe.result.suggestedFileName,

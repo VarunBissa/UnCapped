@@ -275,7 +275,7 @@
     return out.join('\n')
   }
 
-  root.UnCappedDownloads = root.PlexoDownloads = {
+  root.UnCappedDownloads = {
     describe: describe,
     detectEnvironment: detectEnvironment,
     build: build,

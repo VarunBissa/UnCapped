@@ -167,9 +167,9 @@ export function DownloadingScreen({
   const handlePauseResume = (): void => {
     if (isPaused) {
       setResuming(true)
-      void window.plexo.resumeDownload(download.id)
+      void window.uncapped.resumeDownload(download.id)
     } else {
-      void window.plexo.pauseDownload(download.id)
+      void window.uncapped.pauseDownload(download.id)
     }
   }
   const [deletePermanently, setDeletePermanently] = useState(false)
@@ -184,10 +184,10 @@ export function DownloadingScreen({
     if (isPermanent) {
       useAppStore.getState().removeDownloadFromList(downloadId)
       useAppStore.getState().setActiveView('list')
-      void window.plexo.deleteDownload(downloadId, destPath, true, download.fileName)
+      void window.uncapped.deleteDownload(downloadId, destPath, true, download.fileName)
       toast.info('Download Deleted', `${download.fileName} was cancelled and removed.`)
     } else {
-      void window.plexo.cancelDownload(downloadId)
+      void window.uncapped.cancelDownload(downloadId)
       useAppStore.getState().cancelAndRedirectToList(downloadId)
       toast.info(
         'Download Cancelled',
@@ -444,7 +444,7 @@ export function DownloadingScreen({
             <>
               <Dot shrink />
               <span className="shrink-0 text-emerald-500 dark:text-emerald-400 font-medium flex items-center gap-1">
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-[plexo-glow_1.5s_ease-in-out_infinite]" />
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-[uncapped-glow_1.5s_ease-in-out_infinite]" />
                 Gaming Shield
               </span>
             </>

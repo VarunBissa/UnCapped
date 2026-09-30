@@ -51,11 +51,11 @@ export function CompleteScreen({
   // range unit, so this footer's number needs to match that, not `download.chunks.length`.
   const totalChunkCount = download.totalBlocks ?? download.blocks?.length ?? 1
 
-  const handleReveal = (): void => void window.plexo.revealInFolder(download.destinationPath)
+  const handleReveal = (): void => void window.uncapped.revealInFolder(download.destinationPath)
 
   const isSpeedTest =
     download.fileName.startsWith('UnCapped-SpeedTest-') ||
-    download.fileName.startsWith('Plexo-SpeedTest-')
+    download.fileName.startsWith('UnCapped-SpeedTest-')
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -181,7 +181,7 @@ export function CompleteScreen({
           </Button>
           {!isSpeedTest && (
             <Button type="button" onClick={handleReveal} className="flex-1 sm:flex-initial">
-              {window.plexo.platform === 'darwin' ? 'Reveal in Finder' : 'Show in folder'}
+              {window.uncapped.platform === 'darwin' ? 'Reveal in Finder' : 'Show in folder'}
             </Button>
           )}
         </div>

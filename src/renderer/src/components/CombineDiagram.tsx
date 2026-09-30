@@ -77,7 +77,7 @@ export function CombineDiagram({
               style={
                 muted || paused || assembling
                   ? undefined
-                  : { animation: `plexo-dash ${1.1 + index * 0.2}s linear infinite` }
+                  : { animation: `uncapped-dash ${1.1 + index * 0.2}s linear infinite` }
               }
             />
           )
@@ -89,7 +89,7 @@ export function CombineDiagram({
           }
           strokeWidth={6.5}
           opacity={paused ? 0.6 : 1}
-          style={assembling ? { animation: 'plexo-glow 1s ease-in-out infinite' } : undefined}
+          style={assembling ? { animation: 'uncapped-glow 1s ease-in-out infinite' } : undefined}
         />
       </g>
       <polygon

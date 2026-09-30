@@ -83,13 +83,20 @@ export class PlexoApp {
       args: [PROJECT_ROOT, ...(process.platform === 'linux' ? ['--no-sandbox'] : [])],
       env: {
         ...(process.env as Record<string, string>),
+        UNCAPPED_USER_DATA: this.dirs.userData,
         PLEXO_USER_DATA: this.dirs.userData,
+        UNCAPPED_E2E_HIDE_WINDOW: '1',
         PLEXO_E2E_HIDE_WINDOW: '1',
+        UNCAPPED_E2E_BLOCK_BYTES: String(BLOCK),
         PLEXO_E2E_BLOCK_BYTES: String(BLOCK),
+        UNCAPPED_E2E_RETRY_BASE_MS: '20',
         PLEXO_E2E_RETRY_BASE_MS: '20',
+        UNCAPPED_E2E_STALL_MS: '1500',
         PLEXO_E2E_STALL_MS: '1500',
         // Off unless a test asks for it: a hedge is an extra request, and most tests count them.
+        UNCAPPED_E2E_HEDGE_MS: '600000',
         PLEXO_E2E_HEDGE_MS: '600000',
+        UNCAPPED_E2E_INTERFACES: interfacesEnv(NETWORKS),
         PLEXO_E2E_INTERFACES: interfacesEnv(NETWORKS),
         ...this.extraEnv
       }
@@ -103,13 +110,20 @@ export class PlexoApp {
     await this.page.waitForLoadState('domcontentloaded')
     const session: DownloadState[] = []
     this.sessions.push(session)
+    await this.page.exposeFunction('__uncappedRecord', (state: DownloadState) =>
+      session.push(state)
+    )
     await this.page.exposeFunction('__plexoRecord', (state: DownloadState) => session.push(state))
     await this.page.evaluate(() => {
       const w = window as unknown as {
-        __plexoRecord: (s: unknown) => void
-        plexo: { onDownloadUpdated: (cb: (state: unknown) => void) => void }
+        __uncappedRecord?: (s: unknown) => void
+        __plexoRecord?: (s: unknown) => void
+        uncapped?: { onDownloadUpdated: (cb: (state: unknown) => void) => void }
+        plexo?: { onDownloadUpdated: (cb: (state: unknown) => void) => void }
       }
-      w.plexo.onDownloadUpdated((state: unknown) => w.__plexoRecord(state))
+      const api = w.uncapped || w.plexo
+      const record = w.__uncappedRecord || w.__plexoRecord
+      api?.onDownloadUpdated((state: unknown) => record?.(state))
     })
     return this
   }
@@ -147,10 +161,14 @@ export class PlexoApp {
       (_target, name: string) =>
       (...args: unknown[]) =>
         this.page.evaluate(
-          ([method, params]) =>
-            (window as unknown as { plexo: Record<string, (...a: unknown[]) => unknown> }).plexo[
-              method
-            ](...params),
+          ([method, params]) => {
+            const w = window as unknown as Record<
+              string,
+              Record<string, (...a: unknown[]) => unknown>
+            >
+            const api = w.uncapped || w.plexo
+            return api[method](...params)
+          },
           [name, args] as const
         )
   })

@@ -338,7 +338,7 @@ export function BlockGrid({
                   border = `1px solid ${ASSEMBLED_SOLID}`
                   boxShadow = `0 0 7px ${ASSEMBLED_SOLID}`
                   opacity = 1
-                  animation = 'plexo-glow 0.9s ease-in-out infinite'
+                  animation = 'uncapped-glow 0.9s ease-in-out infinite'
                 } else {
                   // Completed but not yet its turn to be appended — stays in its network's color
                   // a little dimmed, to signal "waiting its turn" rather than "already assembled".

@@ -1,4 +1,4 @@
-const PLEXO_BRIDGE_URL = 'http://127.0.0.1:23851'
+const UNCAPPED_BRIDGE_URL = 'http://127.0.0.1:23851'
 
 const statusDot = document.getElementById('status-dot')
 const statusText = document.getElementById('status-text')
@@ -19,7 +19,7 @@ function setOfflineUi() {
   statusSubtext.textContent = 'Open the UnCapped desktop app to enable bonding'
 }
 
-async function checkPlexoStatus() {
+async function checkUnCappedStatus() {
   statusDot.className = 'status-dot'
   statusText.textContent = 'Checking UnCapped...'
   statusSubtext.textContent = ''
@@ -48,7 +48,7 @@ async function checkPlexoStatus() {
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 2000)
-    const res = await fetch(`${PLEXO_BRIDGE_URL}/health`, { signal: controller.signal })
+    const res = await fetch(`${UNCAPPED_BRIDGE_URL}/health`, { signal: controller.signal })
     clearTimeout(timer)
 
     if (res.ok) {
@@ -66,8 +66,8 @@ async function checkPlexoStatus() {
 }
 
 async function loadSettings() {
-  const result = await chrome.storage.local.get(['plexoConfig'])
-  const config = result.plexoConfig || { enabled: true, minSizeMB: 0 }
+  const result = await chrome.storage.local.get(['uncappedConfig', 'plexoConfig'])
+  const config = result.uncappedConfig || result.plexoConfig || { enabled: true, minSizeMB: 0 }
   interceptToggle.checked = config.enabled !== false
   sizeFilter.value = String(config.minSizeMB || 0)
 }
@@ -77,13 +77,13 @@ async function saveSettings() {
     enabled: interceptToggle.checked,
     minSizeMB: parseInt(sizeFilter.value, 10) || 0
   }
-  await chrome.storage.local.set({ plexoConfig: config })
+  await chrome.storage.local.set({ uncappedConfig: config, plexoConfig: config })
 }
 
 interceptToggle.addEventListener('change', saveSettings)
 sizeFilter.addEventListener('change', saveSettings)
-refreshBtn.addEventListener('click', checkPlexoStatus)
+refreshBtn.addEventListener('click', checkUnCappedStatus)
 
 // Initialize
 loadSettings()
-checkPlexoStatus()
+checkUnCappedStatus()
