@@ -43,10 +43,8 @@ jobs:
       - name: Build Vite bundles
         run: npx electron-vite build
 
-      - name: Package & Publish Installer Assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder ${{ matrix.platform_flag }} --publish always
+      - name: Package Installer Assets
+        run: npx electron-builder ${{ matrix.platform_flag }} --publish never
 
       - name: Package Extension Archive
         if: matrix.os == 'windows-latest'
@@ -54,11 +52,29 @@ jobs:
         run: |
           Compress-Archive -Path extension/* -DestinationPath dist/uncapped-chrome-extension.zip -Force
 
-      - name: Upload Extension Archive to Release
+      - name: Upload Windows Binaries
         if: matrix.os == 'windows-latest' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/uncapped-chrome-extension.zip
+          files: |
+            dist/*-setup.exe
+            dist/uncapped-chrome-extension.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS Binary
+        if: matrix.os == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux Binary
+        if: matrix.os == 'ubuntu-latest' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
