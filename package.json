@@ -1,6 +1,6 @@
 {
   "name": "uncapped",
-  "version": "1.0.0-rc.8",
+  "version": "1.0.0",
   "overrides": {
     "@noble/hashes": "1.8.0"
   },
@@ -10,7 +10,7 @@
     "url": "https://github.com/VarunBissa/UnCapped.git"
   },
   "main": "./out/main/index.js",
-  "author": "Anmol Kapil",
+  "author": "Varun Bissa",
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
