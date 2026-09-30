@@ -54,6 +54,8 @@ export interface ChunkState {
   /** True while this stream is racing another stream for `currentBlockIndex`, because that one
    * was too slow — see main/download/scheduler.ts. Whichever finishes first wins. */
   hedge?: boolean
+  /** True when the network interface this chunk is bound to has reached its data quota limit. */
+  quotaReached?: boolean
 }
 
 export type BlockStatus = 'pending' | 'downloading' | 'completed' | 'error'
@@ -98,7 +100,33 @@ export interface DownloadState {
    * files are already all complete at that point, so this tracks the sequential reassembly step
    * rather than the network transfer. */
   assembledBytes?: number
+  completionAction?: CompletionAction
+  scheduledAt?: number
+  latencyShieldEnabled?: boolean
+  shieldedInterfaceId?: string
 }
+
+export type CompletionAction = 'none' | 'sleep' | 'shutdown'
+
+export interface SoloInterfaceBenchmark {
+  interfaceId: string
+  displayName: string
+  speedBytesPerSec: number
+}
+
+export interface SpeedTestComparisonResult {
+  solo: SoloInterfaceBenchmark[]
+  bondedSpeedBytesPerSec: number
+  theoreticalMaxBytesPerSec: number
+  bondingEfficiencyPercent: number
+  speedupPercentOverFastestSolo: number
+  fastestSoloBytesPerSec: number
+  timestamp: number
+}
+
+export type SpeedLimitMode = 'unlimited' | 'capped'
+export type DataCapMode = 'unlimited' | 'capped'
+export type MeteredMode = 'unmetered' | 'metered'
 
 /** User customization for one physical network, keyed by NetworkInterfaceInfo.id — lets a
  * cryptic OS device name (e.g. "feth0") get a real label, and a color distinct from its
@@ -108,6 +136,13 @@ export interface NetworkPreference {
   /** One of the app's curated swatch ids (see NETWORK_COLOR_SWATCHES) — not a raw hex, so every
    * swatch is guaranteed to have a legible on-solid text color already picked out for it. */
   colorId?: string
+  meteredMode?: MeteredMode
+  speedLimitMode?: SpeedLimitMode
+  /** Maximum speed allowed for this interface in bytes/sec; null or undefined = unlimited. */
+  maxSpeedBytesPerSec?: number | null
+  dataCapMode?: DataCapMode
+  /** Maximum data budget allowed for this interface in bytes; null or undefined = unlimited. */
+  maxDataBytes?: number | null
 }
 
 export type NetworkPreferences = Record<string, NetworkPreference>
@@ -170,4 +205,7 @@ export interface StartDownloadRequest {
   connectionsPerNetwork?: number
   etag: string | null
   lastModified: string | null
+  completionAction?: CompletionAction
+  scheduledAt?: number
+  latencyShieldEnabled?: boolean
 }

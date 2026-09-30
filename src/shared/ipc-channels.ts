@@ -11,6 +11,7 @@ export const IpcChannels = {
   getInitialPaths: 'paths:get-initial',
   chooseDestinationFolder: 'dialog:choose-destination-folder',
   chooseSourceFile: 'dialog:choose-source-file',
+  chooseTorrentFile: 'dialog:choose-torrent-file',
   readClipboardText: 'clipboard:read-text',
   revealInFolder: 'shell:reveal-in-folder',
   startDownload: 'download:start',
@@ -20,8 +21,14 @@ export const IpcChannels = {
   resumeDownload: 'download:resume',
   cancelDownload: 'download:cancel',
   removeDownload: 'download:remove',
+  deleteDownload: 'download:delete',
   downloadUpdated: 'download:updated',
   toggleDevToolsPanel: 'dev:toggle-panel',
   checkForUpdate: 'update:check',
-  dismissUpdate: 'update:dismiss'
+  dismissUpdate: 'update:dismiss',
+  runComparisonSpeedTest: 'benchmark:run-comparison',
+  cancelShutdown: 'power:cancel-shutdown',
+  shutdownCountdown: 'power:shutdown-countdown',
+  setLatencyShield: 'download:set-latency-shield',
+  updateDownloadUrl: 'download:update-url'
 } as const

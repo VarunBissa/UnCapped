@@ -13,7 +13,7 @@ function invoke<K extends keyof IpcContract>(
   return ipcRenderer.invoke(IpcChannels[channel], ...args)
 }
 
-const plexoApi = {
+const uncappedApi = {
   platform: process.platform,
 
   listInterfaces: () => invoke('listInterfaces'),
@@ -29,6 +29,7 @@ const plexoApi = {
   getInitialPaths: () => invoke('getInitialPaths'),
   chooseDestinationFolder: (defaultPath: string) => invoke('chooseDestinationFolder', defaultPath),
   chooseSourceFile: () => invoke('chooseSourceFile'),
+  chooseTorrentFile: () => invoke('chooseTorrentFile'),
   readClipboardText: () => invoke('readClipboardText'),
   revealInFolder: (filePath: string) => invoke('revealInFolder', filePath),
   startDownload: (request: IpcContract['startDownload']['args'][0]) =>
@@ -40,8 +41,26 @@ const plexoApi = {
   resumeDownload: (downloadId: string) => invoke('resumeDownload', downloadId),
   cancelDownload: (downloadId: string) => invoke('cancelDownload', downloadId),
   removeDownload: (downloadId: string) => invoke('removeDownload', downloadId),
+  deleteDownload: (downloadId: string, filePath?: string, permanent?: boolean, fileName?: string) =>
+    invoke('deleteDownload', downloadId, filePath, permanent, fileName),
   checkForUpdate: () => invoke('checkForUpdate'),
   dismissUpdate: (version: string) => invoke('dismissUpdate', version),
+  runComparisonSpeedTest: (testUrl: string, interfaceIds: string[]) =>
+    invoke('runComparisonSpeedTest', testUrl, interfaceIds),
+  cancelShutdown: () => invoke('cancelShutdown'),
+  setLatencyShield: (enabled: boolean) => invoke('setLatencyShield', enabled),
+  updateDownloadUrl: (id: string, newUrl: string) => invoke('updateDownloadUrl', id, newUrl),
+
+  onShutdownCountdown: (
+    callback: (payload: { remainingSeconds: number; action: string } | null) => void
+  ): (() => void) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      payload: { remainingSeconds: number; action: string } | null
+    ): void => callback(payload)
+    ipcRenderer.on(IpcChannels.shutdownCountdown, listener)
+    return () => ipcRenderer.removeListener(IpcChannels.shutdownCountdown, listener)
+  },
 
   onDownloadUpdated: (callback: (state: DownloadState) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, state: DownloadState): void => callback(state)
@@ -56,18 +75,22 @@ const plexoApi = {
   }
 }
 
-export type PlexoApi = typeof plexoApi
+export type UnCappedApi = typeof uncappedApi
+export type PlexoApi = UnCappedApi
 
-// Nothing in the renderer needs raw Electron/Node access — only the typed plexoApi above is
+// Nothing in the renderer needs raw Electron/Node access — only the typed uncappedApi above is
 // exposed. The @electron-toolkit/preload electronAPI (which hands the renderer an unrestricted
 // ipcRenderer.invoke/send/on on any channel) is deliberately not bridged.
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('plexo', plexoApi)
+    contextBridge.exposeInMainWorld('uncapped', uncappedApi)
+    contextBridge.exposeInMainWorld('plexo', uncappedApi)
   } catch (error) {
     console.error(error)
   }
 } else {
   // @ts-ignore (define in dts)
-  window.plexo = plexoApi
+  window.uncapped = uncappedApi
+  // @ts-ignore (define in dts)
+  window.plexo = uncappedApi
 }

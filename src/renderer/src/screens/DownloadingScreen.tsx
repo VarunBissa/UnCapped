@@ -9,6 +9,7 @@ import { NetworkRow } from '../components/NetworkRow'
 import { ScreenFooter } from '../components/ScreenFooter'
 import { ThroughputChart } from '../components/ThroughputChart'
 import { TruncatedText } from '../components/TruncatedText'
+import { UpdateLinkDialog } from '../components/UpdateLinkDialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,10 +22,12 @@ import {
   AlertDialogTrigger
 } from '../components/ui/alert-dialog'
 import { Button, buttonVariants } from '../components/ui/button'
+import { Checkbox } from '../components/ui/checkbox'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip'
 import { useNetworkPolling } from '../hooks/useNetworkPolling'
 import { useNetworkVisuals } from '../hooks/useNetworkVisuals'
 import { useAppStore } from '../store/useAppStore'
+import { toast } from '../store/useToastStore'
 import { KIND_PALETTE, NETWORK_ROW_GRID_COLUMNS } from '../theme'
 import {
   dirnameOf,
@@ -105,7 +108,12 @@ function WhileAssembling({
   )
 }
 
-export function DownloadingScreen({ download }: { download: DownloadState }): React.JSX.Element {
+export function DownloadingScreen({
+  download
+}: {
+  download: DownloadState
+  onBack?: () => void
+}): React.JSX.Element {
   useNetworkPolling(true)
 
   const homeDir = useAppStore((store) => store.homeDir)
@@ -140,14 +148,14 @@ export function DownloadingScreen({ download }: { download: DownloadState }): Re
 
   useEffect(() => {
     if (isAssembling) {
-      document.title = `Plexo — Assembling (${assemblePercent}%)`
+      document.title = `UnCapped — Assembling (${assemblePercent}%)`
     } else if (isPaused) {
-      document.title = knownSize ? `Plexo — Paused (${percent}%)` : 'Plexo — Paused'
+      document.title = knownSize ? `UnCapped — Paused (${percent}%)` : 'UnCapped — Paused'
     } else {
-      document.title = knownSize ? `Plexo — ${percent}%` : 'Plexo — downloading'
+      document.title = knownSize ? `UnCapped — ${percent}%` : 'UnCapped — downloading'
     }
     return () => {
-      document.title = 'Plexo'
+      document.title = 'UnCapped'
     }
   }, [percent, assemblePercent, knownSize, isPaused, isAssembling])
 
@@ -164,8 +172,28 @@ export function DownloadingScreen({ download }: { download: DownloadState }): Re
       void window.plexo.pauseDownload(download.id)
     }
   }
+  const [deletePermanently, setDeletePermanently] = useState(false)
+
   const handleConfirmCancel = (): void => {
-    void window.plexo.cancelDownload(download.id)
+    const downloadId = download.id
+    const destPath = download.destinationPath
+    const isPermanent = deletePermanently
+
+    setDeletePermanently(false)
+
+    if (isPermanent) {
+      useAppStore.getState().removeDownloadFromList(downloadId)
+      useAppStore.getState().setActiveView('list')
+      void window.plexo.deleteDownload(downloadId, destPath, true, download.fileName)
+      toast.info('Download Deleted', `${download.fileName} was cancelled and removed.`)
+    } else {
+      void window.plexo.cancelDownload(downloadId)
+      useAppStore.getState().cancelAndRedirectToList(downloadId)
+      toast.info(
+        'Download Cancelled',
+        `${download.fileName} was stopped. You can download again anytime.`
+      )
+    }
   }
 
   const effectiveSpeed = isPaused ? 0 : download.speedBytesPerSec
@@ -225,64 +253,64 @@ export function DownloadingScreen({ download }: { download: DownloadState }): Re
   return (
     <div className="flex h-full flex-col bg-background">
       <HeroBand>
-        <div className="flex items-center gap-[14px]">
-          <CombineDiagram
-            networks={groups.map((group, index) => ({
-              solid: visuals[index].solid,
-              label: visuals[index].name,
-              speedBytesPerSec: isPaused || isAssembling ? 0 : group.speedBytesPerSec
-            }))}
-            paused={isPaused}
-            assembling={isAssembling}
-          />
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3 sm:gap-[14px]">
+          <div className="flex items-center gap-3 sm:gap-[14px] shrink-0 overflow-x-auto">
+            <CombineDiagram
+              networks={groups.map((group, index) => ({
+                solid: visuals[index].solid,
+                label: visuals[index].name,
+                speedBytesPerSec: isPaused || isAssembling ? 0 : group.speedBytesPerSec
+              }))}
+              paused={isPaused}
+              assembling={isAssembling}
+            />
 
-          <div className="flex min-w-[130px] shrink-0 flex-col gap-[7px]">
-            {isAssembling ? (
-              <BigStat
-                label="ASSEMBLING"
-                value={assemblePercent}
-                unit="%"
-                valueClass="text-[var(--color-ethernet)]"
-              />
-            ) : (
-              <>
+            <div className="flex min-w-[130px] shrink-0 flex-col gap-[7px]">
+              {isAssembling ? (
                 <BigStat
-                  label="TOTAL SPEED"
-                  value={isPaused ? '—' : speed.value}
-                  unit={isPaused ? undefined : `${speed.unit}/s`}
-                  valueClass={isPaused ? 'text-muted-foreground' : 'text-foreground'}
+                  label="ASSEMBLING"
+                  value={assemblePercent}
+                  unit="%"
+                  valueClass="text-[var(--color-ethernet)]"
                 />
-                <div className="flex items-center gap-2 font-mono text-[10px] leading-none font-medium tabular-nums text-muted-foreground">
-                  <InlineStat label="AVG" value={formatSpeed(avgSpeedBytesPerSec)} />
-                  <Dot />
-                  <InlineStat label="PEAK" value={formatSpeed(peakSpeedBytesPerSec)} />
-                </div>
-                {isPaused
-                  ? download.error && (
-                      <div
-                        role="alert"
-                        className="mt-0.5 font-sans text-[11px] leading-[1.2] font-medium text-destructive"
-                      >
-                        {download.error}
-                      </div>
-                    )
-                  : activeChipOption && (
-                      <CyclableChip
-                        label={activeChipOption.label}
-                        tooltip={`${activeChipOption.tooltip}${chipOptions.length > 1 ? ' (click to toggle)' : ''}`}
-                        bg={activeChipOption.visual.bg}
-                        border={activeChipOption.visual.border}
-                        color={activeChipOption.visual.text}
-                        cyclable={chipOptions.length > 1}
-                        onClick={() => setChipModeIndex((i) => (i + 1) % chipOptions.length)}
-                      />
-                    )}
-              </>
-            )}
+              ) : (
+                <>
+                  <BigStat
+                    label="TOTAL SPEED"
+                    value={isPaused ? '—' : speed.value}
+                    unit={isPaused ? undefined : `${speed.unit}/s`}
+                    valueClass={isPaused ? 'text-muted-foreground' : 'text-foreground'}
+                  />
+                  <div className="flex items-center gap-2 font-mono text-[10px] leading-none font-medium tabular-nums text-muted-foreground">
+                    <InlineStat label="AVG" value={formatSpeed(avgSpeedBytesPerSec)} />
+                    <Dot />
+                    <InlineStat label="PEAK" value={formatSpeed(peakSpeedBytesPerSec)} />
+                  </div>
+                  {(isPaused || download.status === 'error') && download.error ? (
+                    <div
+                      role="alert"
+                      className="mt-1 flex flex-col gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 font-sans text-[11px] leading-[1.3] font-medium text-amber-500 dark:text-amber-400"
+                    >
+                      <span>{download.error}</span>
+                    </div>
+                  ) : activeChipOption ? (
+                    <CyclableChip
+                      label={activeChipOption.label}
+                      tooltip={`${activeChipOption.tooltip}${chipOptions.length > 1 ? ' (click to toggle)' : ''}`}
+                      bg={activeChipOption.visual.bg}
+                      border={activeChipOption.visual.border}
+                      color={activeChipOption.visual.text}
+                      cyclable={chipOptions.length > 1}
+                      onClick={() => setChipModeIndex((i) => (i + 1) % chipOptions.length)}
+                    />
+                  ) : null}
+                </>
+              )}
+            </div>
           </div>
 
           <div
-            className={`min-w-0 flex-1 transition-opacity duration-200 ${
+            className={`min-w-0 w-full lg:w-auto flex-1 transition-opacity duration-200 ${
               isPaused || isAssembling ? 'opacity-45' : 'opacity-100'
             }`}
           >
@@ -300,17 +328,17 @@ export function DownloadingScreen({ download }: { download: DownloadState }): Re
         </div>
       </HeroBand>
 
-      <div className="flex flex-col gap-3 p-[16px_20px_18px]">
-        <div className="flex items-center gap-[14px]">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-[10px] border-[0.5px] border-[var(--border-strong)] bg-card font-mono text-[10.5px] leading-none font-bold tracking-[0.04em] text-[var(--text-secondary)]">
+      <div className="flex flex-col gap-3 p-3.5 sm:p-[16px_20px_18px]">
+        <div className="flex items-center gap-3 sm:gap-[14px]">
+          <div className="flex size-10 sm:size-11 shrink-0 items-center justify-center rounded-[10px] border-[0.5px] border-[var(--border-strong)] bg-card font-mono text-[10px] sm:text-[10.5px] leading-none font-bold tracking-[0.04em] text-[var(--text-secondary)]">
             {fileExtensionBadge(download.fileName)}
           </div>
           <div className="min-w-0 flex-1">
             <TruncatedText
               text={download.fileName}
-              className="font-sans text-[15px] leading-[1.3] font-semibold tracking-[-0.01em] text-foreground"
+              className="font-sans text-[14px] sm:text-[15px] leading-[1.3] font-semibold tracking-[-0.01em] text-foreground"
             />
-            <div className="mt-1 flex items-center gap-[7px] font-mono text-[12.5px] leading-[1.2] tabular-nums text-[var(--text-secondary)]">
+            <div className="mt-1 flex flex-wrap items-center gap-[7px] font-mono text-[11.5px] sm:text-[12.5px] leading-[1.2] tabular-nums text-[var(--text-secondary)]">
               <span>
                 {formatBytes(isAssembling ? assembledBytes : download.bytesDownloaded)}
                 {knownSize ? ` of ${formatBytes(download.totalBytes)}` : ''}
@@ -336,10 +364,6 @@ export function DownloadingScreen({ download }: { download: DownloadState }): Re
                   bg={statusBadge.palette.bg}
                   border={statusBadge.palette.border}
                   text={statusBadge.palette.text}
-                  // Pinned for the same reason as the stream row's ACTIVE badge: sizing itself,
-                  // it pushed this text block past the 44px file-type icon beside it and nudged
-                  // everything below down. At h-4 the block stays under the icon, so the row
-                  // height is the icon's either way.
                   className="h-4 rounded-[3.5px] px-[7px] py-0.5 text-[9.5px] font-semibold tracking-[0.08em]"
                 >
                   {statusBadge.label}
@@ -361,11 +385,11 @@ export function DownloadingScreen({ download }: { download: DownloadState }): Re
         />
       </div>
 
-      <div className="flex-1 overflow-x-hidden overflow-y-auto">
+      <div className="flex-1 overflow-x-auto overflow-y-auto">
         <div
           role="table"
           aria-label="Networks"
-          className="grid gap-x-3"
+          className="grid min-w-[506px] gap-x-3"
           style={{ gridTemplateColumns: NETWORK_ROW_GRID_COLUMNS }}
         >
           <div
@@ -402,8 +426,8 @@ export function DownloadingScreen({ download }: { download: DownloadState }): Re
         </div>
       </div>
 
-      <ScreenFooter>
-        <div className="flex min-w-0 flex-1 items-center gap-[7px] overflow-hidden font-mono text-[11px] leading-[1.4] text-muted-foreground">
+      <ScreenFooter className="flex-wrap sm:flex-nowrap gap-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-[7px] overflow-hidden font-mono text-[11px] leading-[1.4] text-muted-foreground flex-wrap sm:flex-nowrap">
           <Tooltip>
             <TooltipTrigger
               render={
@@ -416,6 +440,15 @@ export function DownloadingScreen({ download }: { download: DownloadState }): Re
           </Tooltip>
           <Dot shrink />
           <span className="shrink-0">Resumable</span>
+          {download.latencyShieldEnabled && (
+            <>
+              <Dot shrink />
+              <span className="shrink-0 text-emerald-500 dark:text-emerald-400 font-medium flex items-center gap-1">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-[plexo-glow_1.5s_ease-in-out_infinite]" />
+                Gaming Shield
+              </span>
+            </>
+          )}
           {totalRetries > 0 && (
             <>
               <Dot shrink />
@@ -425,50 +458,70 @@ export function DownloadingScreen({ download }: { download: DownloadState }): Re
             </>
           )}
         </div>
-        <WhileAssembling active={isAssembling} text="Can’t pause while assembling the file">
-          <Button
-            type="button"
-            variant={isPaused ? 'default' : 'secondary'}
-            onClick={handlePauseResume}
-            disabled={isAssembling || resuming}
-            // Disabled natively means unhoverable/unfocusable, which would silence this button's
-            // own explanatory tooltip exactly when it's needed — keep it reachable instead.
-            focusableWhenDisabled
-          >
-            {pauseResumeLabel}
-          </Button>
-        </WhileAssembling>
-        <AlertDialog>
-          <WhileAssembling active={isAssembling} text="Can’t cancel while assembling the file">
-            <AlertDialogTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={isAssembling}
-                  focusableWhenDisabled
-                >
-                  Cancel
-                </Button>
-              }
+        <div className="flex items-center gap-2 shrink-0">
+          {(isPaused || download.status === 'error') && (
+            <UpdateLinkDialog
+              downloadId={download.id}
+              currentUrl={download.url}
+              fileName={download.fileName}
             />
+          )}
+          <WhileAssembling active={isAssembling} text="Can’t pause while assembling the file">
+            <Button
+              type="button"
+              variant={isPaused ? 'default' : 'secondary'}
+              onClick={handlePauseResume}
+              disabled={isAssembling || resuming}
+              focusableWhenDisabled
+            >
+              {pauseResumeLabel}
+            </Button>
           </WhileAssembling>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Cancel this download?</AlertDialogTitle>
-              <AlertDialogDescription>Progress will be lost.</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Keep downloading</AlertDialogCancel>
-              <AlertDialogAction
-                className={buttonVariants({ variant: 'destructive', size: 'sm' })}
-                onClick={handleConfirmCancel}
-              >
-                Cancel download
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          <AlertDialog>
+            <WhileAssembling active={isAssembling} text="Can’t cancel while assembling the file">
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={isAssembling}
+                    focusableWhenDisabled
+                  >
+                    Cancel
+                  </Button>
+                }
+              />
+            </WhileAssembling>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cancel this download?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to stop downloading this file?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="py-2.5">
+                <label className="flex items-center gap-2.5 text-xs text-foreground cursor-pointer select-none">
+                  <Checkbox
+                    checked={deletePermanently}
+                    onCheckedChange={(checked) => setDeletePermanently(Boolean(checked))}
+                  />
+                  <span>Delete partially downloaded files and remove from history</span>
+                </label>
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setDeletePermanently(false)}>
+                  Keep downloading
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className={buttonVariants({ variant: 'destructive', size: 'sm' })}
+                  onClick={handleConfirmCancel}
+                >
+                  Cancel download
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </ScreenFooter>
     </div>
   )

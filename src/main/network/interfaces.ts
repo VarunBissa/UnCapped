@@ -58,13 +58,23 @@ function classifyInterface(hardwarePortName: string): NetworkInterfaceKind {
 
 let cachedWindowsAdapters: Map<string, WindowsAdapter> | null = null
 let lastWindowsAdaptersFetch = 0
-const WINDOWS_ADAPTER_CACHE_TTL_MS = 30_000
+const WINDOWS_ADAPTER_CACHE_TTL_MS = 5_000
 
 /** Adapter aliases match Node's interface names; metadata identifies renamed or localized adapters. */
-async function getWindowsAdapters(): Promise<Map<string, WindowsAdapter>> {
+async function getWindowsAdapters(currentDevices?: string[]): Promise<Map<string, WindowsAdapter>> {
   if (process.platform !== 'win32') return new Map()
   const now = Date.now()
-  if (cachedWindowsAdapters && now - lastWindowsAdaptersFetch < WINDOWS_ADAPTER_CACHE_TTL_MS) {
+  const devicesChanged =
+    cachedWindowsAdapters &&
+    currentDevices &&
+    (currentDevices.length !== cachedWindowsAdapters.size ||
+      currentDevices.some((dev) => !cachedWindowsAdapters!.has(dev)))
+
+  if (
+    cachedWindowsAdapters &&
+    !devicesChanged &&
+    now - lastWindowsAdaptersFetch < WINDOWS_ADAPTER_CACHE_TTL_MS
+  ) {
     return cachedWindowsAdapters
   }
   try {
@@ -103,9 +113,10 @@ export async function listActiveInterfaces(): Promise<NetworkInterfaceInfo[]> {
   const overridden = testInterfaces()
   if (overridden) return overridden
 
-  const hardwarePorts = await getMacHardwarePortNames()
-  const windowsAdapters = await getWindowsAdapters()
   const all = networkInterfaces()
+  const currentDevices = Object.keys(all)
+  const hardwarePorts = await getMacHardwarePortNames()
+  const windowsAdapters = await getWindowsAdapters(currentDevices)
   const result: NetworkInterfaceInfo[] = []
 
   for (const [device, addresses] of Object.entries(all)) {

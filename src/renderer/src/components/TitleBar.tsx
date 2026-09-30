@@ -1,6 +1,9 @@
+import { ArrowLeft, Download } from 'lucide-react'
 import { ColorBadge } from './ColorBadge'
+import { SpeedTestButton } from './SpeedTestButton'
+import { LatencyShieldToggle } from './LatencyShieldToggle'
 import { ThemeToggle } from './ThemeToggle'
-import { UpdateIndicator } from './UpdateIndicator'
+import logoIcon from '../assets/icon.png'
 
 export type TitleBarStatus =
   | { kind: 'none' }
@@ -9,13 +12,30 @@ export type TitleBarStatus =
   | { kind: 'paused'; networkCount: number }
   | { kind: 'offline' }
 
+export interface TitleBarNavButton {
+  label: string
+  icon: 'download' | 'arrow'
+  onClick: () => void
+  badge?: number | string
+}
+
 const isMac = window.plexo.platform === 'darwin'
 
 const pillClass =
   'h-auto flex items-center gap-[7px] rounded-full px-2.5 py-1 font-mono text-[10px] leading-none font-semibold tracking-[0.08em] uppercase whitespace-nowrap'
 const pillDotClass = 'size-1.5 shrink-0 rounded-full'
 
-export function TitleBar({ status }: { status: TitleBarStatus }): React.JSX.Element {
+export function TitleBar({
+  status,
+  navButton,
+  onBack,
+  onNavigateHome
+}: {
+  status: TitleBarStatus
+  navButton?: TitleBarNavButton
+  onBack?: () => void
+  onNavigateHome?: () => void
+}): React.JSX.Element {
   const dimmed = status.kind === 'offline'
 
   return (
@@ -26,15 +46,48 @@ export function TitleBar({ status }: { status: TitleBarStatus }): React.JSX.Elem
         isMac ? 'pl-[94px]' : 'pl-3.5'
       }`}
     >
-      <div
-        // Matches the "LOCKUP · horizontal" wordmark spec from the final icon design.
-        className={`font-sans text-[13px] leading-none font-bold tracking-[-0.02em] ${
-          dimmed ? 'text-muted-foreground' : 'text-foreground'
-        }`}
-      >
-        Plexo
+      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+        <button
+          type="button"
+          onClick={onNavigateHome}
+          className={`flex items-center gap-2 font-sans text-[13px] leading-none font-bold tracking-[-0.02em] shrink-0 hover:opacity-80 transition-opacity [-webkit-app-region:no-drag] cursor-pointer ${
+            dimmed ? 'text-muted-foreground' : 'text-foreground'
+          }`}
+          title="Home"
+        >
+          <img src={logoIcon} alt="UnCapped" className="size-4.5 rounded-sm object-contain" />
+          <span>UnCapped</span>
+        </button>
+        {navButton ? (
+          <button
+            type="button"
+            onClick={navButton.onClick}
+            className="flex items-center gap-1.5 rounded-[5px] px-2 py-1 font-mono text-[10.5px] sm:text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors [-webkit-app-region:no-drag] cursor-pointer shrink-0"
+          >
+            {navButton.icon === 'download' ? (
+              <Download className="size-3.5" />
+            ) : (
+              <ArrowLeft className="size-3.5" />
+            )}
+            <span>{navButton.label}</span>
+            {navButton.badge != null && (
+              <span className="ml-0.5 rounded-full bg-muted-foreground/15 px-1.5 py-0.2 font-mono text-[9.5px] font-semibold text-foreground/80">
+                {navButton.badge}
+              </span>
+            )}
+          </button>
+        ) : onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1.5 rounded-[5px] px-2 py-1 font-mono text-[10.5px] sm:text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors [-webkit-app-region:no-drag] cursor-pointer shrink-0"
+          >
+            <Download className="size-3.5" />
+            <span>Downloads</span>
+          </button>
+        ) : null}
       </div>
-      <div className="flex-1" />
+      <div className="flex-1 min-w-2" />
       {status.kind === 'combined' && (
         <ColorBadge
           bg="var(--color-wifi-bg)"
@@ -83,7 +136,8 @@ export function TitleBar({ status }: { status: TitleBarStatus }): React.JSX.Elem
           Offline
         </ColorBadge>
       )}
-      <UpdateIndicator />
+      <LatencyShieldToggle />
+      <SpeedTestButton />
       <ThemeToggle />
     </div>
   )

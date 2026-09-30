@@ -294,7 +294,7 @@ async function openPage(
 
 const alternates = (page: Page): Promise<string[]> =>
   page
-    .locator('#cta-alt a')
+    .locator('#cta-alt a[href*="/releases/download/"]')
     .evaluateAll((links) => links.map((a) => `${a.textContent} ${(a as HTMLAnchorElement).href}`))
 
 test.describe('the download page', () => {
@@ -323,7 +323,9 @@ test.describe('the download page', () => {
         'href',
         BASE + 'plexo-1.0.0-rc.7-arm64.dmg'
       )
-      await expect(page.locator('#cta-alt a')).toHaveText('On an Intel Mac? Get the Intel build →')
+      await expect(page.locator('#cta-alt a[href*="/releases/download/"]')).toHaveText(
+        'On an Intel Mac? Get the Intel build →'
+      )
       await expect(page.locator('#cta-alt .hint')).toContainText('About This Mac')
     } finally {
       await close()
@@ -337,7 +339,7 @@ test.describe('the download page', () => {
         'href',
         BASE + 'plexo-1.0.0-rc.7-x64.dmg'
       )
-      await expect(page.locator('#cta-alt a')).toHaveText(
+      await expect(page.locator('#cta-alt a[href*="/releases/download/"]')).toHaveText(
         'On an Apple silicon Mac? Get the Apple silicon build →'
       )
     } finally {
@@ -390,7 +392,7 @@ test.describe('the download page', () => {
   test('a phone is told this is a desktop app, and can still see every download', async () => {
     const { page, close } = await openPage(BROWSERS.iphone)
     try {
-      await expect(page.locator('#primary-title')).toHaveText('Plexo is a desktop app')
+      await expect(page.locator('#primary-title')).toHaveText('UnCapped is a desktop app')
       await expect(page.locator('#primary-btn')).toHaveAttribute('href', '#downloads')
       await expect(page.locator('.asset-row')).toHaveCount(SHIPPED.length)
     } finally {
@@ -449,7 +451,7 @@ test.describe('the download page', () => {
       const notes = page.locator('.os-group').nth(0).locator('.os-notes')
       await expect(notes).toContainText('Open Anyway')
       await expect(notes.locator('code').first()).toHaveText(
-        'xattr -dr com.apple.quarantine /Applications/Plexo.app'
+        'xattr -dr com.apple.quarantine /Applications/UnCapped.app'
       )
       await expect(page.locator('.os-group').nth(1).locator('.os-notes')).toContainText(
         'Run anyway'

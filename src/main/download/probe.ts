@@ -1,12 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { existsSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
+import { basename } from 'node:path'
 import { URL } from 'node:url'
 import type { ProbeResult } from '../../shared/types'
 import { testKnobs } from '../testKnobs'
 
 const MAX_REDIRECTS = 5
-const USER_AGENT = 'Plexo/1.0'
+const USER_AGENT = 'UnCapped/1.0'
 // A server that accepts the connection and never answers would otherwise hang the probe — and
 // the link field's "Checking…" — forever. Same budget as a stalled chunk.
 const PROBE_TIMEOUT_MS = testKnobs.stallTimeoutMs
@@ -126,6 +128,15 @@ export function isMagnetUrl(rawUrl: string): boolean {
   return sanitized.toLowerCase().startsWith('magnet:')
 }
 
+export function isTorrentFile(rawUrl: string): boolean {
+  if (typeof rawUrl !== 'string') return false
+  const sanitized = rawUrl
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/^file:\/\//i, '')
+  return sanitized.toLowerCase().endsWith('.torrent')
+}
+
 export function parseMagnetUrl(rawUrl: string): ProbeResult {
   const sanitized = rawUrl.trim().replace(/^["']|["']$/g, '')
   const searchIndex = sanitized.indexOf('?')
@@ -192,14 +203,7 @@ export function parseMagnetUrl(rawUrl: string): ProbeResult {
   }
 }
 
-async function getWebTorrent(): Promise<any> {
-  try {
-    const mod = await import('webtorrent')
-    return mod.default || mod
-  } catch {
-    return null
-  }
-}
+import { getWebTorrent } from './webtorrentLoader'
 
 export async function resolveMagnetMetadata(
   magnetUrl: string,
@@ -208,45 +212,75 @@ export async function resolveMagnetMetadata(
   return new Promise((resolve) => {
     let client: any = null
     let timer: NodeJS.Timeout | null = null
+    let finished = false
 
     const cleanup = (): void => {
-      if (timer) clearTimeout(timer)
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
       if (client) {
         try {
-          client.destroy()
+          client.removeAllListeners()
+          for (const t of client.torrents || []) {
+            try {
+              t.removeAllListeners()
+              t.destroy({ destroyStore: true }, () => {})
+            } catch {
+              // ignore
+            }
+          }
+          client.destroy(() => {})
         } catch {
           // ignore
         }
+        client = null
       }
     }
 
-    timer = setTimeout(() => {
+    const finish = (result: { name?: string; length?: number } | null): void => {
+      if (finished) return
+      finished = true
       cleanup()
-      resolve(null)
+      resolve(result)
+    }
+
+    timer = setTimeout(() => {
+      finish(null)
     }, timeoutMs)
 
     getWebTorrent()
       .then((WebTorrent) => {
-        if (!WebTorrent || timer === null) {
-          cleanup()
-          resolve(null)
+        if (!WebTorrent || timer === null || finished) {
+          finish(null)
           return
         }
-        client = new WebTorrent()
-        client.add(magnetUrl, { destroyStoreOnDestroy: true }, (torrent: any) => {
-          const name = torrent.name
-          const length = torrent.length
-          cleanup()
-          resolve({ name, length })
-        })
+        client = new WebTorrent({ dht: true })
         client.on('error', () => {
-          cleanup()
-          resolve(null)
+          finish(null)
+        })
+
+        const torrent = client.add(
+          magnetUrl,
+          { destroyStoreOnDestroy: true, deselect: true },
+          (t: any) => {
+            try {
+              t.pause()
+            } catch {
+              // ignore
+            }
+            const name = t.name
+            const length = t.length
+            finish({ name, length })
+          }
+        )
+
+        torrent.on('error', () => {
+          finish(null)
         })
       })
       .catch(() => {
-        cleanup()
-        resolve(null)
+        finish(null)
       })
   })
 }
@@ -266,6 +300,33 @@ export async function probeUrl(rawUrl: string): Promise<ProbeResult> {
       // Fall back to parsed magnet URL parameters if metadata resolution times out
     }
     return syncResult
+  }
+
+  if (isTorrentFile(rawUrl)) {
+    const filePath = rawUrl
+      .trim()
+      .replace(/^["']|["']$/g, '')
+      .replace(/^file:\/\//i, '')
+    if (!existsSync(filePath)) {
+      throw new Error(`Torrent file does not exist: ${filePath}`)
+    }
+    const baseName = basename(filePath).replace(/\.torrent$/i, '')
+    let meta: { name?: string; length?: number } | null = null
+    try {
+      meta = await resolveMagnetMetadata(filePath, 4000)
+    } catch {
+      // ignore
+    }
+    return {
+      requestedUrl: filePath,
+      finalUrl: filePath,
+      supportsRanges: true,
+      totalBytes: meta?.length ?? null,
+      suggestedFileName: meta?.name || baseName || 'download',
+      contentType: 'application/x-bittorrent',
+      etag: null,
+      lastModified: null
+    }
   }
 
   let parsedUrl: URL

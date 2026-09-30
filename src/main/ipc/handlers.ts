@@ -1,3 +1,6 @@
+import { existsSync, statSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
+import { basename, dirname, join, normalize } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import {
   app,
@@ -28,6 +31,8 @@ import {
 } from '../settings'
 import { testKnobs } from '../testKnobs'
 import { checkForUpdate, UPDATE_PAGE_URL } from '../updateCheck'
+import { runComparisonBenchmark } from '../network/benchmark'
+import { cancelShutdown } from '../powerManager'
 
 async function openNetworkSettings(): Promise<void> {
   if (process.platform === 'win32') {
@@ -65,6 +70,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
 
   const refreshInterfaces = async (): Promise<NetworkInterfaceInfo[]> => {
     cachedInterfaces = await listActiveInterfaces()
+    void manager.syncInterfaces(cachedInterfaces)
     return cachedInterfaces
   }
 
@@ -84,7 +90,11 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
 
   handle('getNetworkPreferences', async () => loadNetworkPreferences())
 
-  handle('setNetworkPreference', async (_event, id, patch) => saveNetworkPreference(id, patch))
+  handle('setNetworkPreference', async (_event, id, patch) => {
+    const next = await saveNetworkPreference(id, patch)
+    manager.updateNetworkPreference(id, patch)
+    return next
+  })
 
   // The app only ever assigns 'light'/'dark' to nativeTheme.themeSource (main/index.ts's startup
   // call to loadThemeSource() never resolves to 'system') — narrow Electron's wider type here
@@ -136,10 +146,51 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
     return result.filePaths[0]
   })
 
+  handle('chooseTorrentFile', async () => {
+    const window = getWindow()
+    if (!window) return null
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Select Torrent File',
+      filters: [
+        { name: 'Torrent Files (*.torrent)', extensions: ['torrent'] },
+        { name: 'All Files (*.*)', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
   handle('readClipboardText', async () => clipboard.readText())
 
   handle('revealInFolder', async (_event, filePath) => {
-    shell.showItemInFolder(filePath)
+    if (!filePath) return
+    try {
+      const normalized = normalize(filePath)
+      if (existsSync(normalized)) {
+        const stats = statSync(normalized)
+        if (stats.isDirectory()) {
+          await shell.openPath(normalized)
+        } else {
+          shell.showItemInFolder(normalized)
+        }
+        return
+      }
+
+      const parentDir = dirname(normalized)
+      if (existsSync(parentDir)) {
+        await shell.openPath(parentDir)
+        return
+      }
+
+      await shell.openPath(app.getPath('downloads'))
+    } catch {
+      try {
+        shell.showItemInFolder(filePath)
+      } catch {
+        // ignore
+      }
+    }
   })
 
   handle('startDownload', async (_event, request) => {
@@ -169,8 +220,62 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
     manager.remove(id)
   })
 
-  // Kicked off once at startup, not per-call — later renderer calls (e.g. a remount) just await
-  // the same in-flight/settled check instead of re-hitting the GitHub API.
+  handle('deleteDownload', async (_event, id, filePath, permanent, fileName) => {
+    const runtimeState = manager.getDownload(id)
+    manager.remove(id)
+
+    // Allow background clients and write streams to release file locks on Windows
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    const targetsToDelete = new Set<string>()
+
+    if (filePath) {
+      const norm = normalize(filePath)
+      targetsToDelete.add(norm)
+      const dir = dirname(norm)
+      const base = basename(norm)
+      if ((base === 'download' || !existsSync(norm)) && (fileName || runtimeState?.fileName)) {
+        const targetName = fileName || runtimeState?.fileName
+        if (targetName) targetsToDelete.add(normalize(join(dir, targetName)))
+      }
+    }
+
+    if (runtimeState?.destinationPath) {
+      targetsToDelete.add(normalize(runtimeState.destinationPath))
+    }
+    if ((fileName || runtimeState?.fileName) && filePath) {
+      const targetName = fileName || runtimeState?.fileName
+      if (targetName) targetsToDelete.add(normalize(join(dirname(filePath), targetName)))
+    }
+
+    let anyDeleted = false
+    for (const target of targetsToDelete) {
+      if (existsSync(target)) {
+        try {
+          if (permanent) {
+            await rm(target, { recursive: true, force: true })
+            anyDeleted = true
+          } else {
+            try {
+              await shell.trashItem(target)
+              anyDeleted = true
+            } catch (trashErr) {
+              console.warn(
+                `shell.trashItem failed for ${target}, falling back to permanent delete:`,
+                trashErr
+              )
+              await rm(target, { recursive: true, force: true })
+              anyDeleted = true
+            }
+          }
+        } catch (err) {
+          console.error(`Failed to delete target ${target}:`, err)
+        }
+      }
+    }
+    return anyDeleted
+  })
+
   const updateCheckPromise = (async () => {
     const info = testKnobs.forceUpdateVersion
       ? { version: testKnobs.forceUpdateVersion, url: UPDATE_PAGE_URL }
@@ -184,6 +289,27 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
 
   handle('dismissUpdate', async (_event, version) => {
     await saveDismissedUpdateVersion(version)
+  })
+
+  handle('runComparisonSpeedTest', async (_event, testUrl, interfaceIds) => {
+    let active = cachedInterfaces.filter((i) => interfaceIds.includes(i.id))
+    if (active.length === 0) {
+      await refreshInterfaces()
+      active = cachedInterfaces.filter((i) => interfaceIds.includes(i.id))
+    }
+    return runComparisonBenchmark(testUrl, active)
+  })
+
+  handle('cancelShutdown', async () => {
+    return cancelShutdown(getWindow)
+  })
+
+  handle('setLatencyShield', async (_event, enabled) => {
+    return manager.setLatencyShield(enabled)
+  })
+
+  handle('updateDownloadUrl', async (_event, id, newUrl) => {
+    return manager.updateDownloadUrl(id, newUrl)
   })
 
   return manager

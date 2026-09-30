@@ -1,6 +1,6 @@
-# Contributing to Plexo
+# Contributing to UnCapped
 
-Thanks for taking a look at Plexo. It's a small project, so the process is intentionally lightweight.
+Thanks for taking a look at UnCapped. It's a small project, so the process is intentionally lightweight.
 
 ## Setup
 
@@ -50,7 +50,7 @@ Tests build the app first; set `PLEXO_E2E_SKIP_BUILD=1` when `out/` is already f
 
 ## Releasing
 
-A release ships seven files: `Plexo` for macOS (Apple silicon and Intel `.dmg`), Windows (one installer for x64 and ARM64) and Linux (`AppImage` and `.deb`, x86_64 and ARM64). The download page (`docs/`, served by GitHub Pages) reads them from the latest GitHub Release and labels each one from its file name (`docs/downloads.js`), so keep the naming in `electron-builder.yml` intact.
+A release ships seven files: `UnCapped` for macOS (Apple silicon and Intel `.dmg`), Windows (one installer for x64 and ARM64) and Linux (`AppImage` and `.deb`, x86_64 and ARM64). The download page (`docs/`, served by GitHub Pages) reads them from the latest GitHub Release and labels each one from its file name (`docs/downloads.js`), so keep the naming in `electron-builder.yml` intact.
 
 ```bash
 npm version <version> --no-git-tag-version     # e.g. 1.0.0-rc.8

@@ -17,11 +17,45 @@ function sanitizeNetworkPreferences(parsed: unknown): NetworkPreferences {
   const result: NetworkPreferences = {}
   for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof value !== 'object' || value === null) continue
-    const { customName, colorId } = value as Record<string, unknown>
+    const {
+      customName,
+      colorId,
+      meteredMode,
+      speedLimitMode,
+      maxSpeedBytesPerSec,
+      dataCapMode,
+      maxDataBytes
+    } = value as Record<string, unknown>
     const preference: NetworkPreference = {}
     if (typeof customName === 'string') preference.customName = customName
     if (typeof colorId === 'string') preference.colorId = colorId
-    if (preference.customName || preference.colorId) result[id] = preference
+    if (meteredMode === 'unmetered' || meteredMode === 'metered') {
+      preference.meteredMode = meteredMode
+    }
+    if (speedLimitMode === 'unlimited' || speedLimitMode === 'capped') {
+      preference.speedLimitMode = speedLimitMode
+    }
+    if (typeof maxSpeedBytesPerSec === 'number' && maxSpeedBytesPerSec > 0) {
+      preference.maxSpeedBytesPerSec = maxSpeedBytesPerSec
+    }
+    if (dataCapMode === 'unlimited' || dataCapMode === 'capped') {
+      preference.dataCapMode = dataCapMode
+    }
+    if (typeof maxDataBytes === 'number' && maxDataBytes > 0) {
+      preference.maxDataBytes = maxDataBytes
+    }
+
+    if (
+      preference.customName ||
+      preference.colorId ||
+      preference.meteredMode ||
+      preference.speedLimitMode ||
+      preference.maxSpeedBytesPerSec != null ||
+      preference.dataCapMode ||
+      preference.maxDataBytes != null
+    ) {
+      result[id] = preference
+    }
   }
   return result
 }
@@ -47,7 +81,14 @@ export async function saveNetworkPreference(
   const merged: NetworkPreference = { ...current[id], ...patch }
   const next: NetworkPreferences = { ...current }
 
-  if (merged.customName || merged.colorId) {
+  if (
+    merged.customName ||
+    merged.colorId ||
+    merged.speedLimitMode ||
+    merged.maxSpeedBytesPerSec != null ||
+    merged.dataCapMode ||
+    merged.maxDataBytes != null
+  ) {
     next[id] = merged
   } else {
     delete next[id]

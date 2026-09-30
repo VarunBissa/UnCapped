@@ -1,14 +1,18 @@
-# Plexo
+# UnCapped
 
-A fast download manager for Windows, macOS, and Linux that speeds up downloads by pulling chunks in parallel across **multiple network connections at the same time**.
+[![Release](https://img.shields.io/github/v/release/VarunBissa/UnCapped?color=6366f1&label=Release)](https://github.com/VarunBissa/UnCapped/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen)](https://github.com/VarunBissa/UnCapped/releases)
+[![Built with Electron](https://img.shields.io/badge/Built%20with-Electron%20%26%20React%2019-teal)](package.json)
 
-For example, if your computer has:
+A lightning-fast, high-performance download manager for **Windows, macOS, and Linux** that accelerates file transfers by aggregating and pulling chunks in parallel across **multiple network connections simultaneously**.
 
-- Wi-Fi
-- Ethernet
-- USB-tethered phone (iPhone or Android)
+If your machine is connected to multiple networks at once — for example:
+- **Wi-Fi** (Home or Office broadband)
+- **Ethernet** (High-speed LAN)
+- **USB Mobile Tethering** (4G / 5G iPhone or Android)
 
-Plexo can utilize all of them simultaneously to download the **same file**.
+UnCapped pools their bandwidth together to download the **same file** concurrently at combined speeds.
 
 https://github.com/user-attachments/assets/e57728f4-fb63-441f-839c-174eef954b17
 
@@ -24,15 +28,15 @@ To use your Android phone's connection over USB, install **TetherKit** — a kex
 
 See [Using a USB-tethered Android phone](#using-a-usb-tethered-android-phone) for setup instructions.
 
-> Plexo can only route traffic through connections that your operating system recognizes as network interfaces.
+> UnCapped can only route traffic through connections that your operating system recognizes as network interfaces.
 
 ---
 
-## Why Plexo?
+## Why UnCapped?
 
 A single TCP connection rarely saturates your actual bandwidth. Even when your computer has multiple active networks — such as Wi-Fi and a tethered mobile phone — the operating system routes all traffic through a single default gateway, leaving the other interfaces completely idle.
 
-Plexo changes that: it splits the file into independent byte ranges and downloads them simultaneously through distinct physical network interfaces.
+UnCapped changes that: it splits the file into independent byte ranges and downloads them simultaneously through distinct physical network interfaces.
 
 ```text
                     ┌── Wi-Fi (IP: 192.168.1.40) ────┐
@@ -52,7 +56,7 @@ File ──→ Split ─────┼── Ethernet (IP: 10.0.0.12) ───
 - 🔌 **Hardware interface detection** — queries Windows adapters via PowerShell `Get-NetAdapter` and macOS hardware ports via `networksetup` so Wi-Fi, Ethernet, tethered iPhones, and Thunderbolt bridges are labeled by real device names instead of bare BSD names (`en0`, `en6`).
 - ⚖️ **Dynamic work-stealing queue** — chunks are leased from a shared pending queue; faster networks pull more chunks instead of waiting for slower connections to finish.
 - ⏸️ **Resumable downloads** — cleanly pause or retry failed downloads without losing progress, preserving completed `part-N` chunk files on disk.
-- 💾 **Relaunch recovery** — interrupted downloads are restored as paused after Plexo restarts, with progress and part files preserved in application data.
+- 💾 **Relaunch recovery** — interrupted downloads are restored as paused after UnCapped restarts, with progress and part files preserved in application data.
 - 🛡️ **Safe, integrity-checked resume** — re-verifies remote `ETag` and `Last-Modified` validators before resuming, refusing to resume (rather than corrupting the file) if the server-side file has changed.
 - 🔁 **Automatic retry with backoff** — failed chunks are automatically returned to the queue and retried with exponential backoff (up to 5 retries, 1s–15s backoff).
 - 💤 **Stall detection & watchdog** — automatically drops and re-queues connections that remain open but silent (>20s without incoming data).
@@ -68,7 +72,7 @@ File ──→ Split ─────┼── Ethernet (IP: 10.0.0.12) ───
 
 # How it works
 
-Instead of downloading a file linearly over a single socket, Plexo requests arbitrary slices of the file simultaneously across multiple physical network interfaces. Three core technical primitives make this work:
+Instead of downloading a file linearly over a single socket, UnCapped requests arbitrary slices of the file simultaneously across multiple physical network interfaces. Three core technical primitives make this work:
 
 ### 1. HTTP range requests (`206 Partial Content`)
 
@@ -80,15 +84,15 @@ Host: releases.ubuntu.com
 Range: bytes=8388608-16777215
 ```
 
-Servers advertise this capability with the `Accept-Ranges: bytes` response header and reply with HTTP status `206 Partial Content`. Because byte slices are stateless and independent, Plexo can request dozens of chunks at once, in any order, and stitch them together later.
+Servers advertise this capability with the `Accept-Ranges: bytes` response header and reply with HTTP status `206 Partial Content`. Because byte slices are stateless and independent, UnCapped can request dozens of chunks at once, in any order, and stitch them together later.
 
 #### Probing before downloading
 
-Before starting a multi-connection download, Plexo sends a **1-byte ranged GET** (`Range: bytes=0-0`), following any redirects:
+Before starting a multi-connection download, UnCapped sends a **1-byte ranged GET** (`Range: bytes=0-0`), following any redirects:
 
 - Unlike a `HEAD` request (which servers and CDNs frequently misreport), receiving a `206 Partial Content` response conclusively proves that range requests are supported and functional.
 - The probe response provides the total file size (`Content-Range` / `Content-Length`), suggested filename (`Content-Disposition`), and cache validators (`ETag` and `Last-Modified`).
-- If the server answers with `200 OK` (ignoring the `Range` header), Plexo falls back to a standard single-connection stream instead of failing.
+- If the server answers with `200 OK` (ignoring the `Range` header), UnCapped falls back to a standard single-connection stream instead of failing.
 
 ### 2. Multi-interface socket binding via `localAddress`
 
@@ -107,7 +111,7 @@ https.request({
 })
 ```
 
-This single option is Plexo's entire multi-network routing engine:
+This single option is UnCapped's entire multi-network routing engine:
 
 - **No virtual network adapters or VPN tunnels**
 - **No packet bonding or link aggregation**
@@ -118,7 +122,7 @@ This single option is Plexo's entire multi-network routing engine:
 
 If you statically divide a 6 GB file into equal shares (e.g. 3 GB on Wi-Fi and 3 GB on mobile data), the total download speed is bottlenecked by the slower network.
 
-Instead, Plexo uses a **dynamic work-stealing queue**:
+Instead, UnCapped uses a **dynamic work-stealing queue**:
 
 1. The file is split into **chunks of up to 8 MB** (smaller for small files, so every network gets a share).
 2. All chunks enter a centralized pending queue.
@@ -141,7 +145,7 @@ Each worker writes its assigned byte range directly to an isolated temporary fil
 
 Once the queue is drained and all chunk promises resolve:
 
-- Plexo streams each `part-N` file sequentially into the final destination file using Node.js streams (`createReadStream` piped into `createWriteStream` with `{ flags: 'a' }`).
+- UnCapped streams each `part-N` file sequentially into the final destination file using Node.js streams (`createReadStream` piped into `createWriteStream` with `{ flags: 'a' }`).
 - The temporary chunk directory is cleaned up.
 - The assembled file is verified against the expected byte length.
 
@@ -151,16 +155,16 @@ Once the queue is drained and all chunk promises resolve:
 
 When you pause a download:
 
-- Plexo aborts all active HTTP socket connections via `AbortController`.
+- UnCapped aborts all active HTTP socket connections via `AbortController`.
 - All completed `part-N` files remain cached on disk in a temporary directory.
 
 When you resume:
 
-1. **Validator check**: Plexo sends a probe request to compare the server's current `ETag` and `Last-Modified` headers against the values recorded when the download started.
-2. **Safe resume**: If the validators match, Plexo checks which `part-N` files are already complete on disk, skips them, and queues only the remaining chunks.
-3. **Guard against corruption**: If the file on the server has changed, Plexo refuses to resume to prevent combining incompatible slices into a corrupt file.
+1. **Validator check**: UnCapped sends a probe request to compare the server's current `ETag` and `Last-Modified` headers against the values recorded when the download started.
+2. **Safe resume**: If the validators match, UnCapped checks which `part-N` files are already complete on disk, skips them, and queues only the remaining chunks.
+3. **Guard against corruption**: If the file on the server has changed, UnCapped refuses to resume to prevent combining incompatible slices into a corrupt file.
 
-Download manifests and partial data are stored under Plexo's application-data directory. If Plexo
+Download manifests and partial data are stored under UnCapped's application-data directory. If UnCapped
 quits or crashes during a transfer, it restores that transfer as paused on the next launch. Explicitly
 cancelling or removing a download still deletes its partial data.
 
@@ -168,7 +172,7 @@ cancelling or removing a download still deletes its partial data.
 
 # What is a chunk?
 
-A **chunk** is the atomic unit of work in Plexo:
+A **chunk** is the atomic unit of work in UnCapped:
 
 - **Size**: Up to 8 MB, with the final chunk sized to the remaining bytes. A file that is small next to its connection count gets smaller chunks (never under 1 MB) — at least two per connection — so a fast network can out-pull a slow one instead of being stuck behind it.
 - **Transport**: One independent HTTP range request (`Range: bytes=START-END`).
@@ -205,25 +209,75 @@ Progress Grid:
 
 ---
 
-# Getting started
+# Downloads & Releases
 
-Plexo currently doesn't have pre-built releases, so you'll need to run it from source.
+Pre-compiled standalone releases and installers are published on the GitHub Releases page:
+
+👉 **[Download the Latest Release of UnCapped](https://github.com/VarunBissa/UnCapped/releases)**
+
+| Operating System | Package Format | Details |
+| :--- | :--- | :--- |
+| **Windows** | `.exe` (NSIS Installer) | Supports Windows 10 & 11 (x64 / ARM64) |
+| **macOS** | `.dmg` (Disk Image) | Universal binary for Apple Silicon (M1/M2/M3) and Intel |
+| **Linux** | `.AppImage`, `.deb` | Modern Linux distributions (Ubuntu, Debian, Fedora, Arch) |
+
+---
+
+# Automatic In-App Updates (Zero Effort for Users)
+
+UnCapped includes a built-in automated release detection and update workflow:
+
+1. **Automatic Background Check**: Each time UnCapped starts, it queries the GitHub Releases API for new version releases.
+2. **Interactive Update Dialog**: When a newer version is released, UnCapped notifies you immediately with an in-app prompt showing the release version and a 1-click **Download** button.
+3. **Quiet Mode**: If you dismiss the update prompt to finish a task, a subtle, unobtrusive update indicator remains available in the TitleBar so you can update whenever you are ready.
+
+---
+
+# How to Use UnCapped
+
+### 1. Connect Your Network Adapters
+- Plug in your Ethernet cable, join your Wi-Fi network, and/or enable USB tethering on your mobile device (iOS Personal Hotspot or Android USB Tethering).
+- Open UnCapped. The top **Networks** bar will automatically detect and display all your active network connections.
+- Click on any network card to customize its display name, change its accent color, or toggle it off if you wish to preserve metered data on a specific connection.
+
+### 2. Start a Download
+- **Paste URL**: Copy any direct HTTP/HTTPS download link or BitTorrent Magnet link.
+- In UnCapped, press `Ctrl+V` (or `Cmd+V` on macOS), or click the URL input field and paste the link.
+- Choose your preferred save directory (UnCapped remembers your last chosen folder automatically).
+- Click **Start Download**.
+
+### 3. Track Transfers in Real Time
+- **Dynamic Chunk Grid**: Watch UnCapped slice the file into atomic chunks and pull them simultaneously across your networks. Each chunk square is color-coded to the exact network interface that downloaded it.
+- **Active Streams**: See real-time transfer speeds and chunk leasing across all bonded networks.
+- **In-Progress Library View**: Click the **Downloads** button at any time to inspect your active queue. The list view defaults to in-progress downloads, allowing you to pause or resume transfers directly from each table row.
+
+### 4. Pausing, Resuming & Clean Cancellation
+- **Safe Pause & Resume**: Pause a download at any point. When resumed, UnCapped verifies server cache validators (`ETag` and `Last-Modified`) to ensure data integrity and picks up exactly where it left off without redownloading finished parts.
+- **Cancel with Disk Purge**: If you cancel a download, a dialog allows you to delete all partially downloaded chunk files immediately from disk, keeping your storage clean.
+
+### 5. Browser Extension Integration
+- UnCapped includes a lightweight Chromium browser extension located in the `extension/` folder.
+- Load it into Chrome, Edge, or Brave via `chrome://extensions` (Developer Mode → Load Unpacked) to automatically intercept browser downloads and send them directly into UnCapped for multi-network acceleration.
+
+---
+
+# Running from Source (Developer Setup)
 
 ## Requirements
 
-- **Windows 10/11, macOS, or Linux**: Windows uses its built-in Windows PowerShell for adapter metadata; macOS uses `networksetup`; Linux provides fallback interface detection and desktop network settings integration.
+- **Windows 10/11, macOS, or Linux**: Windows uses PowerShell for network adapter metadata; macOS uses `networksetup`; Linux provides desktop network settings integration.
 - **Node.js**: 22.12+ (Node 22 LTS recommended).
 - **npm**: v9+ recommended.
 
 ---
 
-## Run Plexo locally
+## Run UnCapped locally
 
 Clone the repository:
 
 ```bash
-git clone https://github.com/anmolkapil/plexo.git
-cd plexo
+git clone https://github.com/VarunBissa/UnCapped.git
+cd UnCapped
 ```
 
 Install dependencies:
@@ -242,7 +296,7 @@ npm run dev
 
 ## Running tests
 
-Plexo includes an automated end-to-end test suite driven by Playwright:
+UnCapped includes an automated end-to-end test suite driven by Playwright:
 
 ```bash
 npm run test:e2e:smoke          # quick smoke tests
@@ -255,7 +309,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#end-to-end-tests) for testing options and 
 
 # Build the macOS app
 
-To package Plexo as a standalone macOS application bundle:
+To package UnCapped as a standalone macOS application bundle:
 
 ```bash
 npm run build:mac
@@ -264,10 +318,10 @@ npm run build:mac
 The compiled application will be generated at:
 
 ```text
-dist/mac/Plexo.app
+dist/mac/UnCapped.app
 ```
 
-> **Note on Gatekeeper:** The app is unsigned because it is not distributed with a paid Apple Developer certificate. However, because you compile it locally on your machine, macOS will not apply the quarantine flag (`com.apple.quarantine`). Gatekeeper only quarantines files downloaded from the web (via browsers, curl, etc.), so your locally built `Plexo.app` will launch cleanly without quarantine warnings.
+> **Note on Gatekeeper:** The app is unsigned because it is not distributed with a paid Apple Developer certificate. However, because you compile it locally on your machine, macOS will not apply the quarantine flag (`com.apple.quarantine`). Gatekeeper only quarantines files downloaded from the web (via browsers, curl, etc.), so your locally built `UnCapped.app` will launch cleanly without quarantine warnings.
 
 ## Build the Windows app
 
@@ -278,8 +332,8 @@ npm install
 npm run build:win
 ```
 
-The installer is generated at `dist/plexo-1.0.0-setup.exe`. For an unpacked app, run
-`npm run build:unpack` and launch `dist/win-unpacked/plexo.exe`.
+The installer is generated at `dist/uncapped-1.0.0-setup.exe`. For an unpacked app, run
+`npm run build:unpack` and launch `dist/win-unpacked/uncapped.exe`.
 Local builds are unsigned.
 
 Windows uses native window controls, Ctrl+V hints, File Explorer integration, and Windows
@@ -302,13 +356,33 @@ Linux packaging remains available via `npm run build:linux` (see [Build the Linu
 
 ## Build the Linux app
 
-To package Plexo for Linux:
+To package UnCapped for Linux:
 
 ```bash
 npm run build:linux
 ```
 
 The package will be generated in `dist/`.
+
+---
+
+## Automated Releases & Publishing (For Maintainers)
+
+UnCapped includes an automated GitHub Actions release pipeline (`.github/workflows/release.yml`). To publish an update:
+
+1. **Bump Version in `package.json`**:
+   ```bash
+   npm version patch   # e.g., 1.0.1 (or minor / major)
+   ```
+2. **Push Commit and Tag**:
+   ```bash
+   git push origin main --tags
+   ```
+3. **Automated Multi-Platform Compilation**:
+   The release workflow automatically kicks off on GitHub Actions, compiles signed and packaged installers for **Windows**, **macOS**, and **Linux**, and attaches them alongside `latest.yml` to the GitHub Release.
+4. **Instant In-App User Notification**:
+   All active UnCapped installations check GitHub Releases on startup. When your new tag is published, their in-app update banner will pop up immediately, allowing them to download the update in one click!
+
 
 ---
 
@@ -333,7 +407,7 @@ brew install XiaoMiku01/tap/tetherkit
 1. Connect your Android device via USB.
 2. On your phone, navigate to **Settings → Network & Internet → Hotspot & tethering** and enable **USB tethering**.
 3. Once TetherKit is active, macOS registers the device as a network interface.
-4. Open Plexo — the new interface will be automatically detected and ready to carry download chunks.
+4. Open UnCapped — the new interface will be automatically detected and ready to carry download chunks.
 
 Special thanks to [@XiaoMiku01](https://github.com/XiaoMiku01) for developing and open-sourcing TetherKit!
 
@@ -356,7 +430,7 @@ For development setup, coding standards, and PR workflows, see [CONTRIBUTING.md]
 
 # Tech stack
 
-Plexo is built with:
+UnCapped is built with:
 
 - **Electron** — desktop runtime
 - **React 19** — declarative UI
@@ -370,6 +444,14 @@ Plexo is built with:
 
 ---
 
-# License
+# License & Usage Guide
 
-MIT — see [LICENSE](LICENSE).
+UnCapped is open-source software released under the **[MIT License](LICENSE)**.
+
+### Summary of Rights & Guidelines
+- **Free for Personal & Commercial Use:** You are free to download, use, modify, distribute, and integrate UnCapped into private, academic, or commercial projects at no cost.
+- **Attribution:** Any redistribution of the source code or binary distributions must include the original copyright notice and MIT license.
+- **Responsible Use:** Please ensure you only download content you have legal authorization to access. Because UnCapped bonds multiple network adapters (e.g. mobile tethering + Wi-Fi), monitor your cellular data allowances to avoid unexpected carrier charges.
+
+For full legal terms, guidelines, and FAQ, please see the **[LICENSE](LICENSE)** file.
+

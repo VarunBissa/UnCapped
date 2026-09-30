@@ -1,10 +1,55 @@
 import { createWriteStream, type WriteStream } from 'node:fs'
-import { request as httpRequest, type ClientRequest, type IncomingMessage } from 'node:http'
-import { request as httpsRequest } from 'node:https'
+import {
+  Agent as HttpAgent,
+  request as httpRequest,
+  type ClientRequest,
+  type IncomingMessage
+} from 'node:http'
+import { Agent as HttpsAgent, request as httpsRequest } from 'node:https'
 import { URL } from 'node:url'
 import { routeFrom } from '../network/deviceBinding'
 import { testKnobs } from '../testKnobs'
 import { compareVersion, type FileVersion, type VersionCheck } from './fileVersion'
+
+const agentPool = new Map<string, { http: HttpAgent; https: HttpsAgent }>()
+
+export function evictAgentForInterface(localAddress: string): void {
+  const key = localAddress || 'default'
+  const entry = agentPool.get(key)
+  if (entry) {
+    try {
+      entry.http.destroy()
+      entry.https.destroy()
+    } catch {
+      // ignore
+    }
+    agentPool.delete(key)
+  }
+}
+
+export function getAgentsForInterface(localAddress: string): {
+  http: HttpAgent
+  https: HttpsAgent
+} {
+  const key = localAddress || 'default'
+  let entry = agentPool.get(key)
+  if (!entry) {
+    const opts = {
+      keepAlive: true,
+      keepAliveMsecs: 30000,
+      maxSockets: 32,
+      maxFreeSockets: 16,
+      timeout: STALL_TIMEOUT_MS,
+      localAddress: localAddress || undefined
+    }
+    entry = {
+      http: new HttpAgent(opts),
+      https: new HttpsAgent(opts)
+    }
+    agentPool.set(key, entry)
+  }
+  return entry
+}
 
 export interface ChunkDownloadOptions {
   url: string
@@ -20,6 +65,8 @@ export interface ChunkDownloadOptions {
   signal: AbortSignal
   /** The version the download started on, plus any confirmed to serve identical bytes. */
   acceptedVersions: FileVersion[]
+  /** Maximum download speed allowed in bytes/sec; undefined or null = unlimited. */
+  maxSpeedBytesPerSec?: number | null
   /** Called once the server has answered with usable headers: how long that took, and whether
    * the request went out on a connection an earlier one had already warmed up. */
   onResponse?: (info: { ttfbMs: number; reusedSocket: boolean }) => void
@@ -42,6 +89,7 @@ export class RemoteChangedError extends Error {
 // error, no close) would otherwise hang the chunk forever with no way to
 // detect or retry it.
 const STALL_TIMEOUT_MS = testKnobs.stallTimeoutMs
+const CONNECT_TIMEOUT_MS = Math.min(testKnobs.stallTimeoutMs, 6_000)
 
 // Only the initial probe resolves redirects today — if a CDN reissues a
 // redirect mid-download (e.g. a signed URL rotates), a chunk needs to be
@@ -103,6 +151,7 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
     onProgress,
     signal,
     acceptedVersions,
+    maxSpeedBytesPerSec,
     onResponse
   } = options
 
@@ -119,6 +168,9 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
     let currentReq: ClientRequest | null = null
     let currentFileStream: WriteStream | null = null
     let stallWatchdog: NodeJS.Timeout | null = null
+    let throttleTimer: NodeJS.Timeout | null = null
+    let windowStartTime = Date.now()
+    let windowBytes = 0
 
     const clearWatchdog = (): void => {
       if (stallWatchdog) {
@@ -127,17 +179,25 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
       }
     }
 
-    const resetWatchdog = (): void => {
+    const resetWatchdog = (timeoutMs = STALL_TIMEOUT_MS): void => {
       clearWatchdog()
       stallWatchdog = setTimeout(() => {
         fail(new Error('Connection stalled: no response from server'))
-      }, STALL_TIMEOUT_MS)
+      }, timeoutMs)
+    }
+
+    const clearThrottle = (): void => {
+      if (throttleTimer) {
+        clearTimeout(throttleTimer)
+        throttleTimer = null
+      }
     }
 
     const finish = (fn: () => void): void => {
       if (settled) return
       settled = true
       clearWatchdog()
+      clearThrottle()
       signal.removeEventListener('abort', onAbort)
       fn()
     }
@@ -145,6 +205,17 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
     const fail = (error: Error): void =>
       finish(() => {
         currentReq?.destroy()
+        const msg = error.message.toLowerCase()
+        if (
+          msg.includes('stalled') ||
+          msg.includes('etimedout') ||
+          msg.includes('ehostunreach') ||
+          msg.includes('enetunreach') ||
+          msg.includes('eaddrnotavail') ||
+          msg.includes('socket hang up')
+        ) {
+          evictAgentForInterface(localAddress)
+        }
         // Closing the part file matters twice over: an abandoned stream holds
         // its descriptor for the life of the process (a paused-and-resumed
         // download, or a chunk that retries a few times, leaks one per
@@ -167,7 +238,7 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
 
     // The whole file from the start needs no Range at all — and an empty file would answer
     // `bytes=0-` with 416, since it has no byte 0 to start from.
-    const headers: Record<string, string> = { 'User-Agent': 'Plexo/1.0' }
+    const headers: Record<string, string> = { 'User-Agent': 'UnCapped/1.0' }
     if (rangeStart > 0 || rangeEnd !== null) {
       headers['Range'] =
         rangeEnd === null ? `bytes=${rangeStart}-` : `bytes=${rangeStart}-${rangeEnd}`
@@ -178,8 +249,12 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
         fail(new Error('BitTorrent engine required for magnet link transfers'))
         return
       }
+      resetWatchdog(CONNECT_TIMEOUT_MS)
       const requester = targetUrl.protocol === 'https:' ? httpsRequest : httpRequest
       const sentAt = Date.now()
+      const route = routeFrom(localAddress, targetUrl)
+      const agents = getAgentsForInterface(localAddress)
+      const agent = targetUrl.protocol === 'https:' ? agents.https : agents.http
 
       const req: ClientRequest = requester(
         {
@@ -187,7 +262,8 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
           hostname: targetUrl.hostname,
           port: targetUrl.port || undefined,
           path: `${targetUrl.pathname}${targetUrl.search}`,
-          ...routeFrom(localAddress, targetUrl),
+          ...route,
+          ...(route.createConnection ? {} : { agent }),
           headers
         },
         (res: IncomingMessage) => {
@@ -210,7 +286,11 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
           // sent this chunk rather than the whole file.
           const isValidFullBody = status === 200 && rangeStart === 0
           if (status !== 206 && !isValidFullBody) {
-            fail(new Error(`Unexpected status ${status} for range request`))
+            const isForbiddenOrExpired = status === 403 || status === 401 || status === 410
+            const errText = isForbiddenOrExpired
+              ? `Download link expired (HTTP ${status} ${res.statusMessage || 'Forbidden'})`
+              : `Unexpected status ${status} for range request`
+            fail(new Error(errText))
             res.resume()
             return
           }
@@ -268,6 +348,8 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
           // headers then freezes, or goes silent mid-stream.
           resetWatchdog()
 
+          let drainPaused = false
+
           // Written by hand rather than piped so an overlong body can be cut off
           // at the range boundary: a part file longer than its block would push
           // every byte after it out of place at reassembly time.
@@ -283,12 +365,46 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
             if (usable.length > 0) {
               bytesDownloaded += usable.length
               onProgress(bytesDownloaded)
+
               if (!fileStream.write(usable)) {
+                drainPaused = true
                 res.pause()
                 fileStream.once('drain', () => {
+                  drainPaused = false
                   resetWatchdog()
-                  res.resume()
+                  if (!throttleTimer && !settled) {
+                    res.resume()
+                  }
                 })
+              }
+
+              if (maxSpeedBytesPerSec && maxSpeedBytesPerSec > 0) {
+                windowBytes += usable.length
+                const now = Date.now()
+                const elapsedSec = (now - windowStartTime) / 1000
+                const expectedSec = windowBytes / maxSpeedBytesPerSec
+                const delayMs = (expectedSec - elapsedSec) * 1000
+
+                if (delayMs > 20) {
+                  res.pause()
+                  if (throttleTimer) clearTimeout(throttleTimer)
+                  throttleTimer = setTimeout(
+                    () => {
+                      throttleTimer = null
+                      if (settled) return
+                      resetWatchdog()
+                      if (!drainPaused) {
+                        res.resume()
+                      }
+                    },
+                    Math.min(delayMs, 1000)
+                  )
+                }
+
+                if (elapsedSec > 2) {
+                  windowStartTime = now
+                  windowBytes = 0
+                }
               }
             }
 
@@ -345,7 +461,7 @@ export function fetchRange(
           port: target.port || undefined,
           path: `${target.pathname}${target.search}`,
           ...routeFrom(localAddress, target),
-          headers: { 'User-Agent': 'Plexo/1.0', Range: `bytes=${start}-${end}` }
+          headers: { 'User-Agent': 'UnCapped/1.0', Range: `bytes=${start}-${end}` }
         },
         (res) => {
           const status = res.statusCode ?? 0

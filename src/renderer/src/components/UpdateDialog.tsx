@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { DownloadIcon } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 import {
@@ -15,8 +16,9 @@ import { buttonVariants } from './ui/button'
 export function UpdateDialog(): React.JSX.Element | null {
   const availableUpdate = useAppStore((store) => store.availableUpdate)
   const dismissUpdate = useAppStore((store) => store.dismissUpdate)
+  const downloadRef = useRef<HTMLAnchorElement>(null)
 
-  if (!availableUpdate) return null
+  if (!availableUpdate || availableUpdate.dismissed) return null
 
   return (
     <AlertDialog
@@ -25,18 +27,18 @@ export function UpdateDialog(): React.JSX.Element | null {
         if (!open) dismissUpdate()
       }}
     >
-      <AlertDialogContent>
+      <AlertDialogContent initialFocus={downloadRef}>
         <AlertDialogHeader>
-          <AlertDialogTitle>Plexo {availableUpdate.version} is available</AlertDialogTitle>
+          <AlertDialogTitle>UnCapped {availableUpdate.version} is available</AlertDialogTitle>
           <AlertDialogDescription>A new version is ready to download.</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Not now</AlertDialogCancel>
-          {/* target="_blank" routes through the main process's window-open handler, which hands
-           * http(s) links to the OS browser instead of opening a second app window. */}
+          <AlertDialogCancel onClick={dismissUpdate}>Not now</AlertDialogCancel>
           <AlertDialogAction
             className={buttonVariants({ size: 'sm' })}
-            render={<a href={availableUpdate.url} target="_blank" rel="noreferrer" />}
+            render={
+              <a ref={downloadRef} href={availableUpdate.url} target="_blank" rel="noreferrer" />
+            }
           >
             <DownloadIcon /> Download
           </AlertDialogAction>

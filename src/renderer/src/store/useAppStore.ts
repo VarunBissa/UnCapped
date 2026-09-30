@@ -1,5 +1,6 @@
 import type {
   DownloadState,
+  DownloadStatus,
   NetworkInterfaceInfo,
   NetworkPreference,
   NetworkPreferences,
@@ -8,11 +9,122 @@ import type {
 } from '@shared/types'
 import { create } from 'zustand'
 import { groupChunksByInterface } from '../utils/format'
+import { toast } from './useToastStore'
+
+export function applyTheme(theme: ThemeSource): void {
+  try {
+    localStorage.setItem('uncapped_theme', theme)
+  } catch {
+    // ignore
+  }
+  const root = document.documentElement
+  if (theme === 'dark') {
+    root.classList.add('dark')
+    root.classList.remove('light')
+    root.setAttribute('data-theme', 'dark')
+  } else {
+    root.classList.add('light')
+    root.classList.remove('dark')
+    root.setAttribute('data-theme', 'light')
+  }
+}
+
+function getInitialTheme(): ThemeSource {
+  try {
+    const saved = localStorage.getItem('uncapped_theme')
+    if (saved === 'dark' || saved === 'light') {
+      applyTheme(saved)
+      return saved
+    }
+  } catch {
+    // ignore
+  }
+  return 'light'
+}
 
 type LoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 
+export interface SpeedTestResult {
+  timestamp: number
+  totalBytes: number
+  durationMs: number
+  peakSpeedBytesPerSec: number
+  averageSpeedBytesPerSec: number
+  interfaces: {
+    id: string
+    name: string
+    kind: string
+    bytesDownloaded: number
+    speedBytesPerSec: number
+  }[]
+}
+
 const SPEED_HISTORY_LENGTH = 60
 const SPEED_SAMPLE_INTERVAL_MS = 1000
+const DOWNLOAD_HISTORY_KEY = 'uncapped:download_history'
+const LEGACY_DOWNLOAD_HISTORY_KEY = 'plexo:download_history'
+const SPEED_TEST_RESULT_KEY = 'uncapped:last_speed_test'
+const LEGACY_SPEED_TEST_RESULT_KEY = 'plexo:last_speed_test'
+
+function loadSavedSpeedTestResult(): SpeedTestResult | null {
+  try {
+    const raw =
+      localStorage.getItem(SPEED_TEST_RESULT_KEY) ||
+      localStorage.getItem(LEGACY_SPEED_TEST_RESULT_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as SpeedTestResult
+  } catch {
+    return null
+  }
+}
+
+function persistSpeedTestResult(result: SpeedTestResult | null): void {
+  try {
+    if (result) {
+      localStorage.setItem(SPEED_TEST_RESULT_KEY, JSON.stringify(result))
+    } else {
+      localStorage.removeItem(SPEED_TEST_RESULT_KEY)
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function loadSavedDownloads(): DownloadState[] {
+  try {
+    const raw =
+      localStorage.getItem(DOWNLOAD_HISTORY_KEY) ||
+      localStorage.getItem(LEGACY_DOWNLOAD_HISTORY_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    // Exclude speed test files from persistent fileList and clean up any disk files
+    const filtered = parsed.filter((item) => {
+      const isSpeed =
+        item.fileName?.startsWith('UnCapped-SpeedTest-') ||
+        item.fileName?.startsWith('Plexo-SpeedTest-')
+      if (isSpeed && item.destinationPath) {
+        void window.plexo?.deleteDownload(item.id, item.destinationPath, true)
+      }
+      return !isSpeed
+    })
+    persistDownloads(filtered)
+    return filtered
+  } catch {
+    return []
+  }
+}
+
+function persistDownloads(downloads: DownloadState[]): void {
+  try {
+    localStorage.setItem(DOWNLOAD_HISTORY_KEY, JSON.stringify(downloads))
+  } catch {
+    // ignore
+  }
+}
+
+// Tracks downloads explicitly deleted so lagging IPC update events do not resurrect them in the UI.
+const deletedDownloadIds = new Set<string>()
 
 // Throttling cadence lives outside the store's own state — it's bookkeeping for how often to
 // sample, not something a component should ever read or re-render on.
@@ -39,7 +151,20 @@ interface AppStore {
   /** True in electron-vite's dev server, false in a packaged build — gates the dev tools panel. */
   isDev: boolean
 
-  /** Plexo focuses on one download at a time — this is it. */
+  /** Current UI view: 'list' (files table), 'detail' (complete download screen), or 'idle' (new download) */
+  activeView: 'list' | 'detail' | 'idle'
+  selectedDownload: DownloadState | null
+  fileList: DownloadState[]
+  lastSpeedTestResult: SpeedTestResult | null
+  clearLastSpeedTestResult: () => void
+  setActiveView: (view: 'list' | 'detail' | 'idle') => void
+  setSelectedDownload: (download: DownloadState | null) => void
+  selectDownloadForDetail: (download: DownloadState) => void
+  cancelAndRedirectToList: (id: string) => void
+  removeDownloadFromList: (id: string) => void
+  updateDownloadStatus: (id: string, status: DownloadStatus) => void
+
+  /** UnCapped focuses on one download at a time — this is it. */
   currentDownload: DownloadState | null
   speedHistory: number[]
   /** Same rolling window as speedHistory, split by physical network — for the stacked
@@ -66,6 +191,8 @@ interface AppStore {
   clearCurrentDownload: () => void
   setDraftUrl: (url: string) => void
   setDraftDestinationDir: (dir: string) => void
+  latencyShieldEnabled: boolean
+  toggleLatencyShield: () => Promise<void>
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -74,13 +201,97 @@ export const useAppStore = create<AppStore>((set, get) => ({
   interfacesError: null,
   latencies: {},
   networkPreferences: {},
-  themeSource: 'light',
+  themeSource: getInitialTheme(),
   availableUpdate: null,
 
   homeDir: '',
   downloadsDir: '',
   pathsStatus: 'idle',
   isDev: false,
+
+  activeView: 'idle',
+  latencyShieldEnabled: false,
+  toggleLatencyShield: async () => {
+    const next = !get().latencyShieldEnabled
+    set({ latencyShieldEnabled: next })
+    if (next) {
+      toast.info(
+        'Latency Shield Enabled',
+        'Packet smoothing active to preserve low gaming & stream ping'
+      )
+    } else {
+      toast.info('Latency Shield Disabled', 'Operating at full unconstrained bandwidth')
+    }
+    try {
+      const res = await window.uncapped.setLatencyShield(next)
+      set({ latencyShieldEnabled: res })
+    } catch {
+      // ignore
+    }
+  },
+  selectedDownload: null,
+  fileList: loadSavedDownloads(),
+  lastSpeedTestResult: loadSavedSpeedTestResult(),
+  clearLastSpeedTestResult: () => {
+    persistSpeedTestResult(null)
+    set({ lastSpeedTestResult: null })
+  },
+  setActiveView: (activeView) => set({ activeView }),
+  setSelectedDownload: (selectedDownload) => set({ selectedDownload }),
+  selectDownloadForDetail: (download) => {
+    const isCurrent = get().currentDownload?.id === download.id
+    set({
+      selectedDownload: download,
+      currentDownload: download,
+      speedHistory: isCurrent ? get().speedHistory : [download.speedBytesPerSec],
+      peakSpeedBytesPerSec: isCurrent ? get().peakSpeedBytesPerSec : download.speedBytesPerSec,
+      activeView: 'detail'
+    })
+  },
+  cancelAndRedirectToList: (id) => {
+    deletedDownloadIds.delete(id)
+    let nextFileList = get().fileList.map((item) =>
+      item.id === id ? { ...item, status: 'cancelled' as const, speedBytesPerSec: 0 } : item
+    )
+    if (!nextFileList.some((item) => item.id === id) && get().currentDownload) {
+      nextFileList = [
+        { ...get().currentDownload!, status: 'cancelled' as const, speedBytesPerSec: 0 },
+        ...nextFileList
+      ]
+    }
+    persistDownloads(nextFileList)
+    set({
+      fileList: nextFileList,
+      activeView: 'list',
+      currentDownload: null,
+      selectedDownload: null
+    })
+  },
+  removeDownloadFromList: (id) => {
+    deletedDownloadIds.add(id)
+    const nextFileList = get().fileList.filter((item) => item.id !== id)
+    persistDownloads(nextFileList)
+    set({
+      fileList: nextFileList,
+      currentDownload: get().currentDownload?.id === id ? null : get().currentDownload,
+      selectedDownload: get().selectedDownload?.id === id ? null : get().selectedDownload
+    })
+    void window.plexo.removeDownload(id).catch(() => {})
+  },
+  updateDownloadStatus: (id, status) => {
+    const nextFileList = get().fileList.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            status,
+            speedBytesPerSec:
+              status === 'paused' || status === 'completed' ? 0 : item.speedBytesPerSec
+          }
+        : item
+    )
+    persistDownloads(nextFileList)
+    set({ fileList: nextFileList })
+  },
 
   currentDownload: null,
   speedHistory: [],
@@ -96,8 +307,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // two screens would remount each other in an endless loop.
     if (get().interfacesStatus !== 'ready') set({ interfacesStatus: 'loading' })
     set({ interfacesError: null })
+    const previous = get().interfaces
+    const wasReady = get().interfacesStatus === 'ready'
     try {
       const interfaces = await window.plexo.listInterfaces()
+      if (wasReady && previous.length > 0) {
+        const prevIds = new Set(previous.map((i) => i.id))
+        const nextIds = new Set(interfaces.map((i) => i.id))
+        const added = interfaces.filter((i) => !prevIds.has(i.id))
+        const removed = previous.filter((i) => !nextIds.has(i.id))
+        for (const iface of added) {
+          toast.network(
+            'Network Connected',
+            `${iface.displayName} is now bonded and active`,
+            iface.kind
+          )
+        }
+        for (const iface of removed) {
+          toast.warning('Network Disconnected', `${iface.displayName} was removed`)
+        }
+      }
       set({ interfaces, interfacesStatus: 'ready' })
     } catch (error) {
       set({
@@ -161,14 +390,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
   loadThemeSource: async () => {
     try {
       const themeSource = await window.plexo.getThemeSource()
+      applyTheme(themeSource)
       set({ themeSource })
     } catch {
-      // Best-effort — a failed read just leaves the toggle showing the 'light' default.
+      // Best-effort — a failed read just leaves the toggle showing the current state.
     }
   },
 
   setThemeSource: async (themeSource) => {
     // Optimistic update, same as setNetworkPreference — the toggle should feel instant.
+    applyTheme(themeSource)
     set({ themeSource })
     try {
       await window.plexo.setThemeSource(themeSource)
@@ -222,15 +453,118 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     }
 
-    set({ currentDownload: download, speedHistory, speedHistoryByInterface, peakSpeedBytesPerSec })
+    if (download.latencyShieldEnabled !== undefined) {
+      set({ latencyShieldEnabled: download.latencyShieldEnabled })
+    }
+
+    const isSpeedTest =
+      download.fileName.startsWith('UnCapped-SpeedTest-') ||
+      download.fileName.startsWith('Plexo-SpeedTest-')
+
+    if (download.status === 'completed' && isSpeedTest) {
+      const durationMs = Math.max(
+        500,
+        (download.completedAt || Date.now()) - download.startedAt - (download.totalPausedMs || 0)
+      )
+      const averageSpeedBytesPerSec = Math.round((download.bytesDownloaded / durationMs) * 1000)
+      const peakSpeedBytesPerSec = Math.max(
+        get().peakSpeedBytesPerSec,
+        download.speedBytesPerSec,
+        averageSpeedBytesPerSec
+      )
+
+      const interfaceGroups = groupChunksByInterface(download.chunks)
+      const interfacesSummary = interfaceGroups.map((g) => ({
+        id: g.interfaceId,
+        name: g.interfaceLabel,
+        kind: g.interfaceKind,
+        bytesDownloaded: g.bytesDownloaded,
+        speedBytesPerSec: g.speedBytesPerSec
+      }))
+
+      const result: SpeedTestResult = {
+        timestamp: Date.now(),
+        totalBytes: download.bytesDownloaded,
+        durationMs,
+        peakSpeedBytesPerSec,
+        averageSpeedBytesPerSec,
+        interfaces: interfacesSummary
+      }
+
+      persistSpeedTestResult(result)
+
+      // Automatically remove the temporary speed test file permanently from disk and manager
+      void window.plexo.deleteDownload(download.id, download.destinationPath, true)
+
+      set({ lastSpeedTestResult: result })
+    }
+
+    if (
+      !isSpeedTest &&
+      previous &&
+      previous.id === download.id &&
+      previous.status !== 'completed' &&
+      download.status === 'completed'
+    ) {
+      toast.success('Download Complete', download.fileName, {
+        label: 'Open Folder',
+        onClick: () => {
+          if (download.destinationPath) {
+            void window.plexo.revealInFolder(download.destinationPath)
+          }
+        }
+      })
+    }
+
+    if (deletedDownloadIds.has(download.id)) {
+      return
+    }
+
+    if (!isSpeedTest) {
+      const existingIndex = get().fileList.findIndex(
+        (item) => item.id === download.id || item.fileName === download.fileName
+      )
+      if (existingIndex < 0 && download.status === 'cancelled') {
+        return
+      }
+
+      const nextFileList = [...get().fileList]
+      if (existingIndex >= 0) {
+        nextFileList[existingIndex] = { ...nextFileList[existingIndex], ...download }
+      } else {
+        nextFileList.unshift(download)
+      }
+      persistDownloads(nextFileList)
+
+      set({
+        currentDownload: download,
+        selectedDownload:
+          get().selectedDownload?.id === download.id ? download : get().selectedDownload,
+        fileList: nextFileList,
+        speedHistory,
+        speedHistoryByInterface,
+        peakSpeedBytesPerSec
+      })
+    } else {
+      set({
+        currentDownload: download,
+        selectedDownload:
+          get().selectedDownload?.id === download.id ? download : get().selectedDownload,
+        speedHistory,
+        speedHistoryByInterface,
+        peakSpeedBytesPerSec
+      })
+    }
   },
 
   clearCurrentDownload: () =>
     set({
       currentDownload: null,
+      selectedDownload: null,
       speedHistory: [],
       speedHistoryByInterface: {},
-      peakSpeedBytesPerSec: 0
+      peakSpeedBytesPerSec: 0,
+      activeView: 'idle'
     }),
 
   setDraftUrl: (draftUrl) => set({ draftUrl }),

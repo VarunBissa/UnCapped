@@ -8,7 +8,8 @@ import type {
   StartDownloadRequest,
   StartSimulatedDownloadRequest,
   ThemeSource,
-  UpdateInfo
+  UpdateInfo,
+  SpeedTestComparisonResult
 } from './types'
 
 /** The request/response half of the IPC surface (every IpcChannels entry except the two
@@ -31,6 +32,7 @@ export interface IpcContract {
   getInitialPaths: { args: []; result: InitialPaths }
   chooseDestinationFolder: { args: [defaultPath: string]; result: string | null }
   chooseSourceFile: { args: []; result: string | null }
+  chooseTorrentFile: { args: []; result: string | null }
   readClipboardText: { args: []; result: string }
   revealInFolder: { args: [filePath: string]; result: void }
   startDownload: { args: [request: StartDownloadRequest]; result: string }
@@ -40,6 +42,17 @@ export interface IpcContract {
   resumeDownload: { args: [id: string]; result: void }
   cancelDownload: { args: [id: string]; result: void }
   removeDownload: { args: [id: string]; result: void }
+  deleteDownload: {
+    args: [id: string, filePath?: string, permanent?: boolean, fileName?: string]
+    result: boolean
+  }
   checkForUpdate: { args: []; result: UpdateInfo | null }
   dismissUpdate: { args: [version: string]; result: void }
+  runComparisonSpeedTest: {
+    args: [testUrl: string, interfaceIds: string[]]
+    result: SpeedTestComparisonResult
+  }
+  cancelShutdown: { args: []; result: boolean }
+  setLatencyShield: { args: [enabled: boolean]; result: boolean }
+  updateDownloadUrl: { args: [id: string, newUrl: string]; result: boolean }
 }

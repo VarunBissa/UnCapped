@@ -1,5 +1,5 @@
 /*
- * What Plexo's download page and its GitHub Release notes say about each file we ship, and which
+ * What UnCapped's download page and its GitHub Release notes say about each file we ship, and which
  * one to put in front of a visitor. Plain ES5 so the page can load it as-is; the release-notes
  * script and the tests load it with require().
  *
@@ -16,8 +16,8 @@
   // Shown under each OS's downloads. `code` spans are wrapped in backticks.
   var NOTES = {
     mac: [
-      'Plexo isn’t signed with an Apple Developer certificate yet, so macOS asks you to confirm the first launch: open the app once, then go to System Settings → Privacy & Security and choose Open Anyway.',
-      'If macOS says the app is damaged or can’t be opened, run `xattr -dr com.apple.quarantine /Applications/Plexo.app` in Terminal and open it again.',
+      'UnCapped isn’t signed with an Apple Developer certificate yet, so macOS asks you to confirm the first launch: open the app once, then go to System Settings → Privacy & Security and choose Open Anyway.',
+      'If macOS says the app is damaged or can’t be opened, run `xattr -dr com.apple.quarantine /Applications/UnCapped.app` in Terminal and open it again.',
       'Not sure which Mac you have? Apple menu → About This Mac: “Chip: Apple M…” is Apple silicon, “Processor: Intel…” is Intel.'
     ],
     win: [
@@ -25,9 +25,9 @@
       'One installer covers both regular (x64) and ARM PCs.'
     ],
     linux: [
-      'AppImage: `chmod +x plexo-*.AppImage`, then run it. Recent Ubuntu needs FUSE 2 first: `sudo apt install libfuse2t64` (older releases call it `libfuse2`) — or use the .deb, which needs nothing extra.',
-      '.deb: `sudo apt install ./plexo_*.deb`.',
-      'Using more than one network needs Linux kernel 5.7 or newer (any current distro); on older kernels Plexo can only use the default network.'
+      'AppImage: `chmod +x uncapped-*.AppImage`, then run it. Recent Ubuntu needs FUSE 2 first: `sudo apt install libfuse2t64` (older releases call it `libfuse2`) — or use the .deb, which needs nothing extra.',
+      '.deb: `sudo apt install ./uncapped_*.deb`.',
+      'Using more than one network needs Linux kernel 5.7 or newer (any current distro); on older kernels UnCapped can only use the default network.'
     ]
   }
 
@@ -275,7 +275,7 @@
     return out.join('\n')
   }
 
-  root.PlexoDownloads = {
+  root.UnCappedDownloads = root.PlexoDownloads = {
     describe: describe,
     detectEnvironment: detectEnvironment,
     build: build,

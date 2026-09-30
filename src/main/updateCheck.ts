@@ -3,8 +3,8 @@ import type { UpdateInfo } from '../shared/types'
 
 type ReleaseInfo = Omit<UpdateInfo, 'dismissed'>
 
-const REPO = 'anmolkapil/plexo'
-export const UPDATE_PAGE_URL = 'https://anmolkapil.github.io/plexo/'
+const REPO = 'VarunBissa/UnCapped'
+export const UPDATE_PAGE_URL = 'https://github.com/VarunBissa/UnCapped/releases'
 
 function parseVersion(version: string): number[] {
   // ponytail: naive numeric-segment compare, not full semver (a "1.0.0-rc.2" pre-release tag

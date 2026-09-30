@@ -4,6 +4,7 @@ import { ScreenFooter } from '../components/ScreenFooter'
 import { TruncatedText } from '../components/TruncatedText'
 import { Button } from '../components/ui/button'
 import { describeError, fileExtensionBadge, formatBytes } from '../utils/format'
+import { toast } from '../store/useToastStore'
 
 export function ErrorScreen({
   download,
@@ -31,6 +32,7 @@ export function ErrorScreen({
     try {
       await navigator.clipboard.writeText(download.url)
       setCopied(true)
+      toast.success('Link Copied', 'Download link copied to clipboard')
       setTimeout(() => setCopied(false), 2000)
     } catch {
       // Ignore clipboard write failures

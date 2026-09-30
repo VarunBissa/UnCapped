@@ -11,6 +11,16 @@ interface AppSettings {
   themeSource?: ThemeSource
   dismissedUpdateVersion?: string
   lastDownloadDir?: string
+  windowState?: WindowModeSettings
+}
+
+export interface WindowModeSettings {
+  isFullScreen?: boolean
+  isMaximized?: boolean
+  width?: number
+  height?: number
+  x?: number
+  y?: number
 }
 
 async function loadSettings(): Promise<AppSettings> {
@@ -63,6 +73,20 @@ export async function saveLastDownloadDir(dir: string): Promise<void> {
   await writeFile(
     settingsPath(),
     JSON.stringify({ ...settings, lastDownloadDir: dir }, null, 2),
+    'utf-8'
+  )
+}
+
+export async function loadWindowState(): Promise<WindowModeSettings> {
+  const settings = await loadSettings()
+  return settings.windowState || {}
+}
+
+export async function saveWindowState(state: WindowModeSettings): Promise<void> {
+  const settings = await loadSettings()
+  await writeFile(
+    settingsPath(),
+    JSON.stringify({ ...settings, windowState: state }, null, 2),
     'utf-8'
   )
 }

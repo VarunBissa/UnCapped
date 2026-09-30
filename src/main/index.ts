@@ -3,21 +3,54 @@ import { app, BrowserWindow, Menu, nativeTheme, shell } from 'electron'
 import { join } from 'path'
 import icon from '../../resources/icon-dark.png?asset'
 import { registerIpcHandlers } from './ipc/handlers'
-import { loadThemeSource } from './settings'
+import { loadThemeSource, loadWindowState, saveWindowState } from './settings'
 import { testKnobs } from './testKnobs'
 import { IpcChannels } from '../shared/ipc-channels'
 import type { DownloadManager } from './download/downloadManager'
+import { startExtensionBridge, stopExtensionBridge } from './bridge/extensionBridge'
+import { initTray, type TrayController } from './tray'
 
 // In dev mode the app runs as the raw `electron` binary, which otherwise shows "Electron" in
 // the Dock tooltip/menu bar — must be set before the app is ready. Packaged builds already get
 // this from electron-builder's productName, but setting it here keeps dev and packaged in sync.
-app.setName('Plexo')
+app.setName('UnCapped')
 
 // Each e2e test runs against its own throwaway userData folder (downloads, manifests, settings).
 if (testKnobs.userDataDir) app.setPath('userData', testKnobs.userDataDir)
 
+process.on('uncaughtException', (err: unknown) => {
+  const stack = err instanceof Error ? err.stack || err.message : String(err)
+  if (
+    stack.includes('webtorrent') ||
+    stack.includes('ut_metadata') ||
+    stack.includes('bittorrent')
+  ) {
+    console.warn('[WebTorrent background warning]:', err instanceof Error ? err.message : err)
+    return
+  }
+  console.error('[Uncaught Exception]:', err)
+})
+
+process.on('unhandledRejection', (reason: unknown) => {
+  const stack = reason instanceof Error ? reason.stack || reason.message : String(reason)
+  if (
+    stack.includes('webtorrent') ||
+    stack.includes('ut_metadata') ||
+    stack.includes('bittorrent')
+  ) {
+    console.warn(
+      '[WebTorrent background rejection]:',
+      reason instanceof Error ? reason.message : reason
+    )
+    return
+  }
+  console.error('[Unhandled Rejection]:', reason)
+})
+
 let mainWindow: BrowserWindow | null = null
 let downloadManager: DownloadManager | null = null
+let trayController: TrayController | null = null
+let isQuitting = false
 let quitAfterSuspending = false
 
 // Only wired in dev — mirrors the default Electron menu (app/edit/view/window) plus one item to
@@ -43,15 +76,21 @@ function installDevMenu(): void {
   )
 }
 
-function createWindow(): void {
+async function createWindow(): Promise<void> {
+  const savedState = await loadWindowState()
+  const width = savedState.width && savedState.width >= 620 ? savedState.width : 760
+  const height = savedState.height && savedState.height >= 420 ? savedState.height : 560
+
   mainWindow = new BrowserWindow({
-    width: 760,
-    height: 560,
+    width,
+    height,
+    x: savedState.x,
+    y: savedState.y,
     minWidth: 620,
     minHeight: 420,
     show: false,
     autoHideMenuBar: true,
-    title: 'Plexo',
+    title: 'UnCapped',
     // Matches the renderer's dark-mode background so a live window resize
     // (which briefly exposes the raw window background) doesn't flash white.
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1c1e' : '#ffffff',
@@ -70,8 +109,64 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
+    if (savedState.isFullScreen) {
+      mainWindow?.setFullScreen(true)
+    } else if (savedState.isMaximized) {
+      mainWindow?.maximize()
+    }
     if (!testKnobs.hideWindow) mainWindow?.show()
   })
+
+  let saveTimer: NodeJS.Timeout | null = null
+  const recordWindowState = (immediate = false): void => {
+    if (!mainWindow) return
+    const isFullScreen = mainWindow.isFullScreen()
+    const isMaximized = mainWindow.isMaximized()
+    const normalBounds = mainWindow.isNormal()
+      ? mainWindow.getBounds()
+      : mainWindow.getNormalBounds
+        ? mainWindow.getNormalBounds()
+        : mainWindow.getBounds()
+
+    if (saveTimer) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+    }
+
+    const stateToSave = {
+      isFullScreen,
+      isMaximized,
+      width: normalBounds.width,
+      height: normalBounds.height,
+      x: normalBounds.x,
+      y: normalBounds.y
+    }
+
+    if (immediate) {
+      void saveWindowState(stateToSave)
+    } else {
+      saveTimer = setTimeout(() => {
+        saveTimer = null
+        void saveWindowState(stateToSave)
+      }, 300)
+    }
+  }
+
+  mainWindow.on('close', (event) => {
+    recordWindowState(true)
+    if (!isQuitting && downloadManager?.hasActiveDownload()) {
+      event.preventDefault()
+      mainWindow?.hide()
+      trayController?.notifyMinimizedToTray()
+      return
+    }
+  })
+  mainWindow.on('resize', () => recordWindowState(false))
+  mainWindow.on('move', () => recordWindowState(false))
+  mainWindow.on('maximize', () => recordWindowState(true))
+  mainWindow.on('unmaximize', () => recordWindowState(true))
+  mainWindow.on('enter-full-screen', () => recordWindowState(true))
+  mainWindow.on('leave-full-screen', () => recordWindowState(true))
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -93,7 +188,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.plexo.app')
+  electronApp.setAppUserModelId('com.uncapped.app')
 
   // Applied before the window is created so the initial background/icon already match —
   // the saved preference otherwise only takes effect on the next 'updated' event.
@@ -104,6 +199,11 @@ app.whenReady().then(async () => {
   })
 
   downloadManager = registerIpcHandlers(() => mainWindow)
+  startExtensionBridge(downloadManager, () => mainWindow)
+  trayController = initTray(() => mainWindow, downloadManager)
+  downloadManager.setOnUpdate((state) => {
+    trayController?.updateTray(state)
+  })
 
   nativeTheme.on('updated', () => {
     mainWindow?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1c1c1e' : '#ffffff')
@@ -111,15 +211,18 @@ app.whenReady().then(async () => {
 
   if (is.dev) installDevMenu()
 
-  createWindow()
+  await createWindow()
   if (testKnobs.hideWindow) app.dock?.hide()
 
   app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow()
   })
 })
 
 app.on('before-quit', (event) => {
+  isQuitting = true
+  trayController?.destroy()
+  stopExtensionBridge()
   if (quitAfterSuspending || !downloadManager) return
 
   event.preventDefault()
@@ -131,6 +234,8 @@ app.on('before-quit', (event) => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    app.quit()
+    if (!downloadManager?.hasActiveDownload()) {
+      app.quit()
+    }
   }
 })

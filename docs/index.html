@@ -3,11 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Plexo — one download, every connection you own</title>
+    <title>UnCapped — one download, every connection you own</title>
     <meta
       name="description"
-      content="Plexo splits a single download across every network you have — Wi-Fi, Ethernet, tethered phone — and merges it back into one verified file."
+      content="UnCapped splits a single download across every network you have — Wi-Fi, Ethernet, tethered phone — and merges it back into one verified file."
     />
+    <link rel="icon" type="image/png" href="icon.png" />
     <link
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
@@ -65,6 +66,7 @@
       .logo {
         width: 32px;
         height: 32px;
+        border-radius: 8px;
         display: block;
         flex-shrink: 0;
       }
@@ -494,26 +496,8 @@
   <body>
     <div class="wrap">
       <header>
-        <svg class="logo" viewBox="0 0 1024 1024">
-          <path
-            d="M512,26 C726,26 820,54 883,117 C946,180 998,298 998,512 C998,726 946,844 883,907 C820,970 726,998 512,998 C298,998 204,970 141,907 C78,844 26,726 26,512 C26,298 78,180 141,117 C204,54 298,26 512,26 Z"
-            fill="#23282b"
-          />
-          <g fill="none" stroke-width="54" stroke-linecap="round" stroke-dasharray="44 64">
-            <path d="M186,282 C400,282 470,512 640,512" stroke="#4ea89a" />
-            <path d="M186,512 L640,512" stroke="#d8a44c" />
-            <path d="M186,742 C400,742 470,512 640,512" stroke="#7e93bd" />
-          </g>
-          <path
-            d="M640,512 L846,512"
-            fill="none"
-            stroke="#f7f4ef"
-            stroke-width="112"
-            stroke-linecap="round"
-          />
-          <circle cx="640" cy="512" r="74" fill="#f7f4ef" />
-        </svg>
-        <div class="wordmark">Plexo</div>
+        <img src="icon.png" alt="UnCapped" class="logo" />
+        <div class="wordmark">UnCapped</div>
         <div class="badge">PRE-RELEASE</div>
         <div class="spacer"></div>
         <a href="https://github.com/anmolkapil/plexo">GitHub</a>
@@ -522,7 +506,7 @@
       <section class="hero">
         <div class="eyebrow">DOWNLOAD MANAGER · MULTI-LINK</div>
         <h1>One download.<br />Every network.</h1>
-        <p>Plexo combines all your available internet connections to download files faster.</p>
+        <p>UnCapped combines all your available internet connections to download files faster.</p>
         <ul class="use-cases">
           <li>Wi-Fi + Ethernet.</li>
           <li>Two tethered phones.</li>
@@ -565,21 +549,21 @@
           <li>
             <img
               src="screenshots/links.png"
-              alt="Plexo's link picker showing Wi-Fi and USB Tethering selected, with ping and parallel stream controls."
+              alt="UnCapped's link picker showing Wi-Fi and USB Tethering selected, with ping and parallel stream controls."
               loading="lazy"
             />
           </li>
           <li>
             <img
               src="screenshots/downloading.png"
-              alt="Plexo combining Wi-Fi and USB tethering into one 27.9 MB/s download, with per-network speed and progress."
+              alt="UnCapped combining Wi-Fi and USB tethering into one 27.9 MB/s download, with per-network speed and progress."
               loading="lazy"
             />
           </li>
           <li>
             <img
               src="screenshots/complete.png"
-              alt="Plexo download complete summary: 109.3 MB in 8 seconds at 39.4 MB/s peak, split across Wi-Fi and USB tethering."
+              alt="UnCapped download complete summary: 109.3 MB in 8 seconds at 39.4 MB/s peak, split across Wi-Fi and USB tethering."
               loading="lazy"
             />
           </li>
@@ -644,7 +628,7 @@
             On your phone: Settings → Network & Internet → Hotspot & tethering → turn on USB
             tethering.
           </li>
-          <li>Open Plexo — it'll pick up the connection automatically.</li>
+          <li>Open UnCapped — it'll pick up the connection automatically.</li>
         </ol>
         <p>
           <a href="https://github.com/anmolkapil/plexo#using-a-usb-tethered-android-phone"
@@ -654,7 +638,7 @@
       </section>
 
       <footer>
-        <div class="ver" id="version-label">PLEXO</div>
+        <div class="ver" id="version-label">UNCAPPED</div>
         <div class="spacer"></div>
         <a href="https://github.com/anmolkapil/plexo">Source</a>
         <a href="https://github.com/anmolkapil/plexo/issues/new">Report an issue</a>
@@ -749,7 +733,7 @@
               'div',
               'asset-note',
               failed
-                ? 'Couldn’t load the latest release from GitHub — get Plexo from the Releases page.'
+                ? 'Couldn’t load the latest release from GitHub — get UnCapped from the Releases page.'
                 : 'No published build assets yet — check the Releases page on GitHub.'
             )
           )
@@ -757,7 +741,7 @@
           $('release-line').textContent = failed
             ? 'Couldn’t check for the latest release.'
             : 'No release published yet.'
-          $('version-label').textContent = 'PLEXO'
+          $('version-label').textContent = 'UNCAPPED'
           $('primary-title').textContent = 'View releases on GitHub'
           $('primary-meta').textContent = repoUrl
           $('primary-btn').href = repoUrl + '/releases'
@@ -787,7 +771,7 @@
                 day: 'numeric'
               })
             : ''
-          versionEl.textContent = 'PLEXO · ' + version
+          versionEl.textContent = 'UNCAPPED · ' + version
           sourceEl.textContent = REPO.toUpperCase() + ' · ' + version.toUpperCase()
           releaseLine.textContent =
             version +
@@ -803,7 +787,7 @@
             // Phones, tablets and anything we don't build for.
             primaryTitle.textContent = model.desktop
               ? 'Choose a download'
-              : 'Plexo is a desktop app'
+              : 'UnCapped is a desktop app'
             primaryMeta.textContent = model.desktop
               ? 'Nothing published for your system yet'
               : 'Open this page on a Mac, Windows or Linux computer'

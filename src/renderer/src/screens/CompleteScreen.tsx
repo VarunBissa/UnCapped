@@ -53,13 +53,17 @@ export function CompleteScreen({
 
   const handleReveal = (): void => void window.plexo.revealInFolder(download.destinationPath)
 
+  const isSpeedTest =
+    download.fileName.startsWith('UnCapped-SpeedTest-') ||
+    download.fileName.startsWith('Plexo-SpeedTest-')
+
   return (
     <div className="flex h-full flex-col bg-background">
       <div role="status" className="sr-only">
         Download complete: {download.fileName}
       </div>
       <HeroBand>
-        <div className="flex items-center gap-[18px]">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-[18px]">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-full border border-[var(--color-wifi-border)] bg-[var(--color-wifi-bg)]">
             <svg viewBox="0 0 24 24" className="size-[21px]" aria-hidden="true">
               <path
@@ -73,20 +77,22 @@ export function CompleteScreen({
             </svg>
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate font-sans text-[16px] leading-[1.2] font-bold">
-              {download.fileName}
+            <div className="truncate font-sans text-[15px] sm:text-[16px] leading-[1.2] font-bold">
+              {isSpeedTest ? 'Speed Test Complete' : download.fileName}
             </div>
-            <div className="mt-[5px] truncate font-mono text-[11.5px] leading-[1.3] text-muted-foreground">
+            <div className="mt-[5px] truncate font-mono text-[11px] sm:text-[11.5px] leading-[1.3] text-muted-foreground">
               {formatBytes(finalSize)} ·{' '}
-              {toDisplayPath(dirnameOf(download.destinationPath), homeDir)}
+              {isSpeedTest
+                ? 'Temporary test file (automatically removed)'
+                : toDisplayPath(dirnameOf(download.destinationPath), homeDir)}
             </div>
           </div>
-          <div className="flex flex-col items-end gap-[5px]">
+          <div className="flex flex-col items-start sm:items-end gap-[5px] shrink-0">
             <div className="font-mono text-[9px] leading-none font-medium tracking-[0.16em] text-muted-foreground">
               AVERAGE
             </div>
             <div className="flex items-baseline gap-1.5">
-              <div className="font-mono text-[26px] leading-[0.9] font-semibold tracking-[-0.02em] tabular-nums text-foreground">
+              <div className="font-mono text-[22px] sm:text-[26px] leading-[0.9] font-semibold tracking-[-0.02em] tabular-nums text-foreground">
                 {avgSpeedValue}
               </div>
               <div className="font-mono text-[11px] leading-none font-medium text-muted-foreground">
@@ -97,31 +103,29 @@ export function CompleteScreen({
         </div>
       </HeroBand>
 
-      <div className="mx-5 my-[18px] grid grid-cols-5 overflow-hidden rounded-[10px] border-[0.5px] border-border bg-card">
+      <div className="mx-4 sm:mx-5 my-3 sm:my-[18px] grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-px overflow-hidden rounded-[10px] border border-border bg-border">
         {[
           { label: 'Size', value: formatBytes(finalSize) },
           { label: 'Time', value: formatDuration(elapsedSeconds) },
           { label: 'Peak', value: formatSpeed(peakSpeedBytesPerSec) },
           { label: 'Networks', value: String(groups.length) },
           { label: 'Streams', value: String(download.chunks.length) }
-        ].map((stat, index) => (
+        ].map((stat) => (
           <div
             key={stat.label}
-            className={`flex flex-col gap-[5px] p-[11px_14px] ${
-              index > 0 ? 'border-l-[0.5px] border-border' : ''
-            }`}
+            className="flex flex-col gap-1 sm:gap-[5px] bg-card p-2.5 sm:p-[11px_14px]"
           >
             <div className="font-mono text-[9px] leading-none font-medium tracking-[0.14em] text-muted-foreground uppercase">
               {stat.label}
             </div>
-            <div className="font-mono text-[14px] leading-none font-medium tabular-nums">
+            <div className="font-mono text-[13px] sm:text-[14px] leading-none font-medium tabular-nums">
               {stat.value}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="mx-5 mb-4 flex flex-col gap-2">
+      <div className="mx-4 sm:mx-5 mb-4 flex flex-col gap-2">
         <h2 className={sectionHeaderClass}>Speed over the download</h2>
         <ThroughputChart
           order={groups.map((g, i) => ({ interfaceId: g.interfaceId, solid: visuals[i].solid }))}
@@ -129,7 +133,7 @@ export function CompleteScreen({
         />
       </div>
 
-      <div className="mx-5 mb-5 flex flex-1 flex-col gap-[9px]">
+      <div className="mx-4 sm:mx-5 mb-5 flex flex-1 flex-col gap-[9px]">
         <h2 className={sectionHeaderClass}>Contribution by network</h2>
         <div className="flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-muted">
           {groups.map((group, index) => (
@@ -159,19 +163,28 @@ export function CompleteScreen({
         </div>
       </div>
 
-      <ScreenFooter>
-        <div className="shrink-0 font-mono text-[11px] leading-[1.4] whitespace-nowrap text-muted-foreground">
+      <ScreenFooter className="flex-wrap sm:flex-nowrap gap-2.5">
+        <div className="shrink-0 font-mono text-[10.5px] sm:text-[11px] leading-[1.4] text-muted-foreground">
           {`reassembled from ${totalChunkCount} chunks · ${totalRetries} ${
             totalRetries === 1 ? 'retry' : 'retries'
           }`}
         </div>
-        <div className="flex-1" />
-        <Button type="button" variant="secondary" onClick={onNewDownload}>
-          New Download
-        </Button>
-        <Button type="button" onClick={handleReveal}>
-          {window.plexo.platform === 'darwin' ? 'Reveal in Finder' : 'Show in folder'}
-        </Button>
+        <div className="flex-1 hidden sm:block" />
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onNewDownload}
+            className="flex-1 sm:flex-initial"
+          >
+            {isSpeedTest ? 'Done' : 'New Download'}
+          </Button>
+          {!isSpeedTest && (
+            <Button type="button" onClick={handleReveal} className="flex-1 sm:flex-initial">
+              {window.plexo.platform === 'darwin' ? 'Reveal in Finder' : 'Show in folder'}
+            </Button>
+          )}
+        </div>
       </ScreenFooter>
     </div>
   )

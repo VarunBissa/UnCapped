@@ -1,16 +1,20 @@
 import type { DownloadState } from '@shared/types'
 import { useEffect } from 'react'
 import { DevToolsPanel } from './components/DevToolsPanel'
-import { TitleBar, type TitleBarStatus } from './components/TitleBar'
+import { TitleBar, type TitleBarNavButton, type TitleBarStatus } from './components/TitleBar'
 import { NetworkBindingDialog } from './components/NetworkBindingDialog'
-import { UpdateDialog } from './components/UpdateDialog'
 import { TooltipProvider } from './components/ui/tooltip'
 import { useDownloadEvents } from './hooks/useDownloadEvents'
+import { useNetworkPolling } from './hooks/useNetworkPolling'
 import { CompleteScreen } from './screens/CompleteScreen'
 import { DownloadingScreen } from './screens/DownloadingScreen'
 import { ErrorScreen } from './screens/ErrorScreen'
+import { FilesListScreen } from './screens/FilesListScreen'
 import { IdleScreen } from './screens/IdleScreen'
 import { NoConnectionsScreen } from './screens/NoConnectionsScreen'
+import { ShutdownCountdownDialog } from './components/ShutdownCountdownDialog'
+import { ToastContainer } from './components/ToastContainer'
+import { UpdateDialog } from './components/UpdateDialog'
 import { useAppStore } from './store/useAppStore'
 
 function assertNever(status: never): never {
@@ -22,12 +26,12 @@ function assertNever(status: never): never {
  * branch happened to be last. */
 function renderDownload(
   download: DownloadState,
-  handlers: { onNewDownload: () => void; onDownloadAgain: () => void }
+  handlers: { onNewDownload: () => void; onDownloadAgain: () => void; onBack?: () => void }
 ): { screen: React.JSX.Element; titleBarStatus: TitleBarStatus } {
   switch (download.status) {
     case 'downloading':
       return {
-        screen: <DownloadingScreen download={download} />,
+        screen: <DownloadingScreen download={download} onBack={handlers.onBack} />,
         titleBarStatus: {
           kind: 'combined',
           networkCount: new Set(download.chunks.map((chunk) => chunk.interfaceId)).size
@@ -35,7 +39,7 @@ function renderDownload(
       }
     case 'paused':
       return {
-        screen: <DownloadingScreen download={download} />,
+        screen: <DownloadingScreen download={download} onBack={handlers.onBack} />,
         titleBarStatus: {
           kind: 'paused',
           networkCount: new Set(download.chunks.map((chunk) => chunk.interfaceId)).size
@@ -43,7 +47,7 @@ function renderDownload(
       }
     case 'assembling':
       return {
-        screen: <DownloadingScreen download={download} />,
+        screen: <DownloadingScreen download={download} onBack={handlers.onBack} />,
         titleBarStatus: { kind: 'assembling' }
       }
     case 'completed':
@@ -70,6 +74,7 @@ function renderDownload(
 
 function App(): React.JSX.Element {
   useDownloadEvents()
+  useNetworkPolling(true)
 
   const interfaces = useAppStore((store) => store.interfaces)
   const interfacesStatus = useAppStore((store) => store.interfacesStatus)
@@ -78,6 +83,12 @@ function App(): React.JSX.Element {
   const loadNetworkPreferences = useAppStore((store) => store.loadNetworkPreferences)
   const loadThemeSource = useAppStore((store) => store.loadThemeSource)
   const loadInitialPaths = useAppStore((store) => store.loadInitialPaths)
+  const activeView = useAppStore((store) => store.activeView)
+  const setActiveView = useAppStore((store) => store.setActiveView)
+  const selectedDownload = useAppStore((store) => store.selectedDownload)
+  const fileList = useAppStore((store) => store.fileList)
+  const selectDownloadForDetail = useAppStore((store) => store.selectDownloadForDetail)
+
   const checkForUpdate = useAppStore((store) => store.checkForUpdate)
 
   useEffect(() => {
@@ -105,15 +116,54 @@ function App(): React.JSX.Element {
 
   let screen: React.JSX.Element
   let titleBarStatus: TitleBarStatus = { kind: 'none' }
+  let navButton: TitleBarNavButton | undefined
 
-  if (currentDownload) {
-    ;({ screen, titleBarStatus } = renderDownload(currentDownload, {
-      onNewDownload: handleNewDownload,
-      onDownloadAgain: handleDownloadAgain
-    }))
-  } else if (noConnections) {
+  const onNavigateHome = (): void => setActiveView('idle')
+
+  if (noConnections) {
     screen = <NoConnectionsScreen />
     titleBarStatus = { kind: 'offline' }
+  } else if (activeView === 'list') {
+    screen = (
+      <FilesListScreen
+        downloads={fileList}
+        onSelectFile={(item) => selectDownloadForDetail(item)}
+        onNewDownload={() => {
+          clearCurrentDownload()
+          setActiveView('idle')
+        }}
+      />
+    )
+    navButton = {
+      label: 'Home',
+      icon: 'arrow',
+      onClick: onNavigateHome
+    }
+  } else if (activeView === 'idle' && !currentDownload && !selectedDownload) {
+    screen = <IdleScreen />
+    if (fileList.length > 0) {
+      navButton = {
+        label: 'Downloads',
+        icon: 'download',
+        onClick: () => setActiveView('list'),
+        badge: fileList.length
+      }
+    }
+  } else if (currentDownload || selectedDownload) {
+    const detailDownload = (selectedDownload || currentDownload)!
+    ;({ screen, titleBarStatus } = renderDownload(detailDownload, {
+      onNewDownload: handleNewDownload,
+      onDownloadAgain: handleDownloadAgain,
+      onBack: () => setActiveView('list')
+    }))
+    if (fileList.length > 0) {
+      navButton = {
+        label: 'Downloads',
+        icon: 'download',
+        onClick: () => setActiveView('list'),
+        badge: fileList.length
+      }
+    }
   } else {
     screen = <IdleScreen />
   }
@@ -121,11 +171,13 @@ function App(): React.JSX.Element {
   return (
     <TooltipProvider>
       <div className="flex h-full flex-col">
-        <TitleBar status={titleBarStatus} />
-        <div className="min-h-0 flex-1">{screen}</div>
+        <TitleBar status={titleBarStatus} navButton={navButton} onNavigateHome={onNavigateHome} />
+        <div className="flex min-h-0 flex-1 flex-col">{screen}</div>
         <DevToolsPanel />
-        <UpdateDialog />
         <NetworkBindingDialog />
+        <ShutdownCountdownDialog />
+        <ToastContainer />
+        <UpdateDialog />
       </div>
     </TooltipProvider>
   )

@@ -1,13 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports, @typescript-eslint/explicit-function-return-type */
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'node:fs/promises'
+import { createReadStream, createWriteStream, existsSync } from 'node:fs'
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  statfs,
+  writeFile
+} from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { finished, pipeline } from 'node:stream/promises'
 import type { BrowserWindow } from 'electron'
-import { app, Notification } from 'electron'
+import { app, Notification, shell } from 'electron'
 
 const netCjs = require('node:net')
 const origNetConnect = netCjs.connect
@@ -57,14 +67,21 @@ import type {
   DownloadState,
   DownloadStatus,
   NetworkInterfaceInfo,
+  NetworkPreference,
   StartDownloadRequest,
   StartSimulatedDownloadRequest
 } from '../../shared/types'
 import { interleave, planDownload } from '../../shared/plan'
 import { testKnobs } from '../testKnobs'
-import { isMagnetUrl } from './probe'
+import { loadNetworkPreferences } from '../network/preferences'
+import { isMagnetUrl, isTorrentFile } from './probe'
 import { advanceBlock, retractBlock } from './blockProgress'
-import { downloadChunk, fetchRange, RemoteChangedError } from './chunkDownloader'
+import {
+  downloadChunk,
+  evictAgentForInterface,
+  fetchRange,
+  RemoteChangedError
+} from './chunkDownloader'
 import { compareVersion, type FileVersion } from './fileVersion'
 import {
   fileSize,
@@ -83,9 +100,17 @@ import {
   isSimulatedUrl,
   unregisterSimSession
 } from './simDownload'
+import { getWebTorrent } from './webtorrentLoader'
+import {
+  acquirePowerSaveBlocker,
+  releasePowerSaveBlocker,
+  sleepSystem,
+  startShutdownCountdown
+} from '../powerManager'
+import { measureLatencies } from '../network/latency'
 
 /** Why an attempt was called off by the manager rather than by a pause or a failure. */
-type AbortReason = 'refresh' | 'lost'
+type AbortReason = 'refresh' | 'lost' | 'disconnect'
 
 /**
  * One request for one block, by one stream. A block normally has a single (primary) attempt.
@@ -162,6 +187,7 @@ interface DownloadRuntime {
   pushScheduled: boolean
   blocks: BlockState[]
   totalBlocks: number
+  scheduleTimer?: NodeJS.Timeout
   persistenceTimer?: NodeJS.Timeout
   persistenceChain: Promise<void>
   removed: boolean
@@ -178,6 +204,18 @@ interface DownloadRuntime {
   attempts: Map<number, Attempt[]>
   /** Hedges started per block index, capped at SCHEDULER_POLICY.maxHedgesPerBlock. */
   hedgesByBlock: Map<number, number>
+  /** User-configured bandwidth speed limits and data caps per interface id. */
+  interfacePreferences?: Map<string, NetworkPreference>
+  /** Cumulative bytes transferred per interface during this download run. */
+  bytesDownloadedByInterface?: Map<string, number>
+  /** Dynamically spawns a worker stream for a newly connected network while downloading. */
+  addWorker?: (chunk: ChunkState) => void
+  /** Dynamically attaches a newly connected network to active WebTorrent clients while downloading. */
+  addMagnetInterface?: (iface: NetworkInterfaceInfo) => void
+  /** Consecutive request failures per interface for circuit breaking stalled tethering links. */
+  consecutiveFailuresByInterface?: Map<string, number>
+  /** Timestamp until which an interface is quarantined and bypassed for new blocks. */
+  quarantinedInterfaces?: Map<string, number>
 }
 
 interface PersistedDownload {
@@ -188,11 +226,18 @@ interface PersistedDownload {
   activeInterfaces: NetworkInterfaceInfo[]
 }
 
-// Set PLEXO_DEBUG=1 to log every request's outcome, how long the server took to answer and
+// Set UNCAPPED_DEBUG=1 (or PLEXO_DEBUG=1) to log every request's outcome, how long the server took to answer and
 // whether it reused a warm connection — what it takes to tell one slow connection from a slow path.
-const debug: (...args: unknown[]) => void = process.env['PLEXO_DEBUG']
-  ? (...args) => console.debug('[plexo]', ...args)
-  : () => {}
+const debug: (...args: unknown[]) => void =
+  process.env['UNCAPPED_DEBUG'] || process.env['PLEXO_DEBUG']
+    ? (...args) => console.debug('[uncapped]', ...args)
+    : () => {}
+
+function isSpeedTestFileName(name?: string): boolean {
+  return Boolean(
+    name && (name.startsWith('UnCapped-SpeedTest-') || name.startsWith('Plexo-SpeedTest-'))
+  )
+}
 
 const PROGRESS_THROTTLE_MS = 200
 
@@ -350,12 +395,23 @@ async function ensureDiskSpace(
   }
 }
 
+const DEFAULT_MAGNET_TRACKERS = [
+  'udp://tracker.opentrackr.org:1337/announce',
+  'udp://open.stealth.si:80/announce',
+  'udp://tracker.torrent.eu.org:451/announce',
+  'udp://tracker.bittor.pw:1337/announce',
+  'udp://opentracker.i2p.rocks:6969/announce',
+  'http://tracker.openbittorrent.com:80/announce',
+  'udp://tracker.openbittorrent.com:6969/announce'
+]
+
 function extractMagnetTrackers(magnetUrl: string): string[] {
   try {
     const parsed = new URL(magnetUrl.replace(/^magnet:\?/, 'http://dummy/?'))
-    return parsed.searchParams.getAll('tr')
+    const fromUrl = parsed.searchParams.getAll('tr')
+    return [...new Set([...fromUrl, ...DEFAULT_MAGNET_TRACKERS])]
   } catch {
-    return []
+    return DEFAULT_MAGNET_TRACKERS
   }
 }
 
@@ -363,6 +419,101 @@ export class DownloadManager {
   private runtimes = new Map<string, DownloadRuntime>()
   private readonly initialization: Promise<void>
   private suspending = false
+  private latencyShieldEnabled = false
+  private onUpdateCallback?: (state: DownloadState) => void
+
+  setOnUpdate(callback: (state: DownloadState) => void): void {
+    this.onUpdateCallback = callback
+  }
+
+  getLatencyShield(): boolean {
+    return this.latencyShieldEnabled
+  }
+
+  async setLatencyShield(enabled: boolean): Promise<boolean> {
+    this.latencyShieldEnabled = enabled
+    for (const runtime of this.runtimes.values()) {
+      runtime.state.latencyShieldEnabled = enabled
+      if (!enabled) {
+        runtime.state.shieldedInterfaceId = undefined
+        if (runtime.activeInterfaces.length > 0) {
+          runtime.state.chunks.forEach((chunk, index) => {
+            const iface = runtime.activeInterfaces[index % runtime.activeInterfaces.length]
+            chunk.interfaceId = iface.id
+            chunk.interfaceLabel = iface.displayName
+            chunk.interfaceKind = iface.kind
+          })
+        }
+      } else {
+        if (runtime.activeInterfaces.length > 1) {
+          let lowestIface = runtime.activeInterfaces[0]
+          try {
+            const pings = await measureLatencies(runtime.activeInterfaces)
+            let lowestPing = Infinity
+            for (const iface of runtime.activeInterfaces) {
+              const ping = pings[iface.id]
+              if (ping !== null && ping !== undefined && ping < lowestPing) {
+                lowestPing = ping
+                lowestIface = iface
+              }
+            }
+          } catch {
+            lowestIface =
+              runtime.activeInterfaces.find((i) => i.kind === 'ethernet') ??
+              runtime.activeInterfaces.find((i) => i.kind === 'wifi') ??
+              runtime.activeInterfaces[0]
+          }
+
+          runtime.state.shieldedInterfaceId = lowestIface.id
+          const unshielded = runtime.activeInterfaces.filter((i) => i.id !== lowestIface.id)
+          if (unshielded.length > 0) {
+            runtime.state.chunks.forEach((chunk, index) => {
+              if (chunk.interfaceId === lowestIface.id) {
+                const fallback = unshielded[index % unshielded.length]
+                chunk.interfaceId = fallback.id
+                chunk.interfaceLabel = fallback.displayName
+                chunk.interfaceKind = fallback.kind
+
+                const self = runtime.chunkRuntimes.get(chunk.id)
+                if (self?.attempt) {
+                  this.abortAttempt(self.attempt, 'refresh')
+                }
+              }
+            })
+          }
+        } else {
+          runtime.state.shieldedInterfaceId = undefined
+        }
+      }
+      this.scheduleUpdate(runtime)
+    }
+    return this.latencyShieldEnabled
+  }
+
+  async updateDownloadUrl(id: string, newUrl: string): Promise<boolean> {
+    const runtime = this.runtimes.get(id)
+    if (!runtime) return false
+
+    runtime.requestPayload.url = newUrl
+    runtime.state.url = newUrl
+    runtime.state.error = undefined
+    for (const chunk of runtime.state.chunks) {
+      chunk.error = undefined
+      chunk.retryCount = 0
+      if (chunk.status === 'error') {
+        chunk.status = 'paused'
+      }
+    }
+    for (const block of runtime.blocks) {
+      if (block.status === 'downloading') {
+        block.status = 'pending'
+      }
+    }
+    await this.persistNow(runtime)
+    this.pushUpdate(runtime)
+    this.resume(id)
+    return true
+  }
 
   constructor(
     private getWindow: () => BrowserWindow | null,
@@ -370,6 +521,26 @@ export class DownloadManager {
     private refreshInterfaces: () => Promise<NetworkInterfaceInfo[]>
   ) {
     this.initialization = this.restorePersistedDownloads()
+
+    const ifacePoller = setInterval(async () => {
+      if (!this.hasManageableDownload()) return
+      try {
+        const ifaces = await this.refreshInterfaces()
+        await this.syncInterfaces(ifaces)
+      } catch {
+        // Polling errors are non-fatal
+      }
+    }, 3000)
+    ifacePoller.unref()
+  }
+
+  private hasManageableDownload(): boolean {
+    for (const runtime of this.runtimes.values()) {
+      if (runtime.state.status === 'downloading' || runtime.state.status === 'paused') {
+        return true
+      }
+    }
+    return false
   }
 
   private downloadsRoot(): string {
@@ -448,7 +619,11 @@ export class DownloadManager {
             refreshesByBlock: new Map(),
             avoidNetworkByBlock: new Map(),
             attempts: new Map(),
-            hedgesByBlock: new Map()
+            hedgesByBlock: new Map(),
+            interfacePreferences: new Map(),
+            bytesDownloadedByInterface: new Map(
+              state.chunks.map((c) => [c.interfaceId, c.bytesDownloaded])
+            )
           })
         } catch {
           // Ignore incomplete or corrupt manifests; other downloads can still be restored.
@@ -456,7 +631,7 @@ export class DownloadManager {
       })
     )
 
-    // Plexo only ever tracks one current download — getCurrentDownload() always returns
+    // UnCapped only ever tracks one current download — getCurrentDownload() always returns
     // whichever restored runtime started most recently. Any other one restored alongside it is
     // an orphan (most likely left over from before concurrent starts were blocked): nothing
     // would ever look at it again, so left in `runtimes` it would sit there forever, invisibly
@@ -480,16 +655,16 @@ export class DownloadManager {
     return latest ? structuredClone(latest.state) : null
   }
 
-  /** Plexo shows one download at a time (see useAppStore's currentDownload) — starting a second
-   * one while one is already running/paused/assembling would silently race it for disk I/O and
-   * scramble the renderer's single-download view as updates from both interleave. */
-  private hasActiveDownload(): boolean {
+  getDownload(id: string): DownloadState | null {
+    const runtime = this.runtimes.get(id)
+    return runtime ? structuredClone(runtime.state) : null
+  }
+
+  /** Only active transfers actively doing network transfer or disk assembly block a new start.
+   * Paused downloads remain safely paused and do not block starting a speed test or new download. */
+  hasActiveDownload(): boolean {
     for (const runtime of this.runtimes.values()) {
-      if (
-        runtime.state.status === 'downloading' ||
-        runtime.state.status === 'paused' ||
-        runtime.state.status === 'assembling'
-      ) {
+      if (runtime.state.status === 'downloading' || runtime.state.status === 'assembling') {
         return true
       }
     }
@@ -498,8 +673,20 @@ export class DownloadManager {
 
   async start(requestPayload: StartDownloadRequest): Promise<string> {
     await this.initialization
+
+    const isSpeedTest = isSpeedTestFileName(requestPayload.suggestedFileName)
+
+    // Speed tests are ephemeral benchmarks — automatically remove any existing speed test runtimes
+    if (isSpeedTest) {
+      for (const [id, runtime] of [...this.runtimes.entries()]) {
+        if (isSpeedTestFileName(runtime.requestPayload.suggestedFileName)) {
+          this.remove(id)
+        }
+      }
+    }
+
     if (this.hasActiveDownload()) {
-      throw new Error('A download is already in progress — finish or remove it first.')
+      throw new Error('A download is already in progress — finish or pause it first.')
     }
 
     const interfaces = requestPayload.interfaceIds
@@ -582,6 +769,14 @@ export class DownloadManager {
       throw error
     }
 
+    const isSpeedTest = isSpeedTestFileName(requestPayload.suggestedFileName)
+    const maxBlockBytes = isSpeedTest
+      ? Math.max(
+          16 * 1024 * 1024,
+          Math.min(64 * 1024 * 1024, Math.ceil(requestPayload.totalBytes / 16))
+        )
+      : testKnobs.blockBytes
+
     const plan = planDownload({
       totalBytes: requestPayload.totalBytes,
       splittable: requestPayload.supportsRanges,
@@ -589,7 +784,7 @@ export class DownloadManager {
       streamsPerNetwork:
         requestPayload.connectionsPerNetwork ??
         Math.round(requestPayload.chunkCount / interfaces.length),
-      maxBlockBytes: testKnobs.blockBytes // 8 MB outside tests
+      maxBlockBytes
     })
 
     // The UI caps how many cells it renders separately (see BlockGrid), by bucketing these
@@ -597,19 +792,46 @@ export class DownloadManager {
     const blocks: BlockState[] = []
     if (requestPayload.totalBytes > 0) {
       const { blockSizeBytes } = plan
-      for (
-        let rangeStart = 0;
-        rangeStart < requestPayload.totalBytes;
-        rangeStart += blockSizeBytes
-      ) {
+      // 3-Tier Adaptive Block Partitioning:
+      // Tier 1 (Warmup): first few blocks per stream are smaller (e.g. 2-4 MB) so streams quickly ramp up & measure real throughput
+      // Tier 2 (Sustained): bulk of the file uses full blockSizeBytes (e.g. 8 MB)
+      // Tier 3 (Finish-line): last 10% / 24 MB uses 1-2 MB blocks to eliminate end-of-download stalling
+      const warmupBlockSize = Math.max(
+        1024 * 1024,
+        Math.min(4 * 1024 * 1024, Math.floor(blockSizeBytes / 2))
+      )
+      const warmupBlocksCount = interfaces.length * 2
+      const tailEndThreshold = Math.max(
+        requestPayload.totalBytes - 24 * 1024 * 1024,
+        requestPayload.totalBytes * 0.9
+      )
+      const tailBlockSize = Math.max(
+        1024 * 1024,
+        Math.min(2 * 1024 * 1024, Math.floor(blockSizeBytes / 4))
+      )
+
+      let rangeStart = 0
+      let blockIdx = 0
+      while (rangeStart < requestPayload.totalBytes) {
+        let size = blockSizeBytes
+        if (
+          blockIdx < warmupBlocksCount &&
+          requestPayload.totalBytes > warmupBlocksCount * warmupBlockSize * 2
+        ) {
+          size = warmupBlockSize
+        } else if (rangeStart >= tailEndThreshold && requestPayload.totalBytes > 16 * 1024 * 1024) {
+          size = tailBlockSize
+        }
+        const rangeEnd = Math.min(rangeStart + size, requestPayload.totalBytes) - 1
         blocks.push({
-          index: blocks.length,
+          index: blockIdx++,
           rangeStart,
-          rangeEnd: Math.min(rangeStart + blockSizeBytes, requestPayload.totalBytes) - 1,
+          rangeEnd,
           status: 'pending',
           bytesDownloaded: 0,
           bytesByInterface: {}
         })
+        rangeStart = rangeEnd + 1
       }
     } else {
       // Size unknown: one open-ended block, to end of file.
@@ -640,6 +862,46 @@ export class DownloadManager {
     })
     const activeInterfaces = [...new Set(plan.streamNetworks)].map((index) => interfaces[index])
 
+    const isScheduled = Boolean(
+      requestPayload.scheduledAt && requestPayload.scheduledAt > Date.now()
+    )
+
+    const latencyShield = requestPayload.latencyShieldEnabled ?? this.latencyShieldEnabled
+    let shieldedId: string | undefined = undefined
+    if (latencyShield && activeInterfaces.length > 1) {
+      try {
+        const pings = await measureLatencies(activeInterfaces)
+        let lowestPing = Infinity
+        let lowestIface = activeInterfaces[0]
+        for (const iface of activeInterfaces) {
+          const ping = pings[iface.id]
+          if (ping !== null && ping !== undefined && ping < lowestPing) {
+            lowestPing = ping
+            lowestIface = iface
+          }
+        }
+        shieldedId = lowestIface.id
+      } catch {
+        const lowestIface =
+          activeInterfaces.find((i) => i.kind === 'ethernet') ??
+          activeInterfaces.find((i) => i.kind === 'wifi') ??
+          activeInterfaces[0]
+        shieldedId = lowestIface.id
+      }
+
+      const unshielded = activeInterfaces.filter((i) => i.id !== shieldedId)
+      if (unshielded.length > 0) {
+        chunks.forEach((chunk, index) => {
+          if (chunk.interfaceId === shieldedId) {
+            const fallback = unshielded[index % unshielded.length]
+            chunk.interfaceId = fallback.id
+            chunk.interfaceLabel = fallback.displayName
+            chunk.interfaceKind = fallback.kind
+          }
+        })
+      }
+    }
+
     const state: DownloadState = {
       id,
       url: requestPayload.url,
@@ -648,13 +910,19 @@ export class DownloadManager {
       totalBytes: requestPayload.totalBytes,
       bytesDownloaded: 0,
       speedBytesPerSec: 0,
-      status: 'downloading',
+      status: isScheduled ? 'paused' : 'downloading',
       chunks,
       blocks,
       totalBlocks: blocks.length,
       blockSizeBytes: plan.blockSizeBytes,
-      startedAt: Date.now()
+      startedAt: Date.now(),
+      completionAction: requestPayload.completionAction,
+      scheduledAt: requestPayload.scheduledAt,
+      latencyShieldEnabled: latencyShield,
+      shieldedInterfaceId: shieldedId
     }
+
+    const prefs = await loadNetworkPreferences()
 
     const runtime: DownloadRuntime = {
       state,
@@ -672,13 +940,26 @@ export class DownloadManager {
       refreshesByBlock: new Map(),
       avoidNetworkByBlock: new Map(),
       attempts: new Map(),
-      hedgesByBlock: new Map()
+      hedgesByBlock: new Map(),
+      interfacePreferences: new Map(Object.entries(prefs)),
+      bytesDownloadedByInterface: new Map()
     }
     this.runtimes.set(id, runtime)
     await this.persistNow(runtime)
     this.pushUpdate(runtime)
 
-    void this.runChunksToCompletion(runtime, runtime.state.chunks)
+    if (isScheduled && requestPayload.scheduledAt) {
+      const delayMs = requestPayload.scheduledAt - Date.now()
+      runtime.scheduleTimer = setTimeout(() => {
+        if (runtime.state.status === 'paused' && !runtime.removed) {
+          runtime.state.scheduledAt = undefined
+          this.resume(runtime.state.id)
+        }
+      }, delayMs)
+    } else {
+      acquirePowerSaveBlocker()
+      void this.runChunksToCompletion(runtime, runtime.state.chunks)
+    }
 
     return id
   }
@@ -686,6 +967,11 @@ export class DownloadManager {
   async pause(id: string): Promise<void> {
     const runtime = this.runtimes.get(id)
     if (!runtime || runtime.state.status !== 'downloading') return
+
+    if ((runtime as any).magnetTicker) {
+      clearInterval((runtime as any).magnetTicker)
+      ;(runtime as any).magnetTicker = null
+    }
 
     if ((runtime as any).magnetClients) {
       const clientsList = (runtime as any).magnetClients
@@ -730,6 +1016,9 @@ export class DownloadManager {
     }
     this.pushUpdate(runtime)
     await this.persistNow(runtime)
+    if (!this.hasActiveDownload()) {
+      releasePowerSaveBlocker()
+    }
   }
 
   resume(id: string): void {
@@ -744,14 +1033,6 @@ export class DownloadManager {
   // started on (see runWorker), which can tell a real change from a relabelled server.
   private async resumeAfterVerifying(runtime: DownloadRuntime): Promise<void> {
     const { url } = runtime.requestPayload
-
-    if (isMagnetUrl(url)) {
-      runtime.state.status = 'downloading'
-      runtime.state.error = undefined
-      this.pushUpdate(runtime)
-      void this.runMagnetDownload(runtime)
-      return
-    }
 
     let availableInterfaces: NetworkInterfaceInfo[]
     if (isSimulatedUrl(url)) {
@@ -769,12 +1050,85 @@ export class DownloadManager {
     }
     if (runtime.state.status !== 'paused' && runtime.state.status !== 'error') return
 
-    const selectedIds = new Set(runtime.requestPayload.interfaceIds)
-    runtime.activeInterfaces = availableInterfaces.filter((iface) => selectedIds.has(iface.id))
+    const isMagnet = isMagnetUrl(url) || isTorrentFile(url)
+    const isSplittable = runtime.requestPayload.supportsRanges || isMagnet
+
+    const availableMap = new Map(availableInterfaces.map((i) => [i.id, i]))
+    const currentActiveMap = new Map(runtime.activeInterfaces.map((i) => [i.id, i]))
+
+    // Adopt any newly detected available interfaces
+    if (isSplittable) {
+      for (const iface of availableInterfaces) {
+        if (!currentActiveMap.has(iface.id)) {
+          currentActiveMap.set(iface.id, iface)
+          if (!runtime.requestPayload.interfaceIds.includes(iface.id)) {
+            runtime.requestPayload.interfaceIds.push(iface.id)
+          }
+        }
+      }
+    }
+
+    // Keep active interfaces that are currently available
+    runtime.activeInterfaces = [...currentActiveMap.values()].filter((iface) =>
+      availableMap.has(iface.id)
+    )
+
     if (runtime.activeInterfaces.length === 0) {
-      runtime.state.error =
-        'None of the networks selected for this download are currently available. Reconnect one and try again.'
+      if (availableInterfaces.length > 0) {
+        runtime.activeInterfaces = availableInterfaces
+        runtime.requestPayload.interfaceIds = availableInterfaces.map((i) => i.id)
+      } else {
+        runtime.state.error =
+          'No network interfaces are currently available. Reconnect to a network and try again.'
+        this.pushUpdate(runtime)
+        return
+      }
+    }
+
+    // Ensure all active interfaces have corresponding chunk stream(s)
+    if (isSplittable) {
+      for (const iface of runtime.activeInterfaces) {
+        const hasChunk = runtime.state.chunks.some((c) => c.interfaceId === iface.id)
+        if (!hasChunk) {
+          const streamsPerNetwork = runtime.requestPayload.connectionsPerNetwork ?? 1
+          for (let s = 0; s < streamsPerNetwork; s++) {
+            const nextId =
+              (runtime.state.chunks.length > 0
+                ? Math.max(...runtime.state.chunks.map((c) => c.id))
+                : -1) + 1
+            runtime.state.chunks.push({
+              id: nextId,
+              interfaceId: iface.id,
+              interfaceLabel: iface.displayName,
+              interfaceKind: iface.kind,
+              rangeStart: 0,
+              rangeEnd: null,
+              bytesDownloaded: 0,
+              speedBytesPerSec: 0,
+              status: 'pending',
+              retryCount: 0
+            })
+          }
+        }
+      }
+    }
+
+    for (let index = 0; index < runtime.state.chunks.length; index++) {
+      const chunk = runtime.state.chunks[index]
+      const iface =
+        runtime.activeInterfaces.find((entry) => entry.id === chunk.interfaceId) ??
+        runtime.activeInterfaces[index % runtime.activeInterfaces.length]
+      chunk.interfaceId = iface.id
+      chunk.interfaceLabel = iface.displayName
+      chunk.interfaceKind = iface.kind
+    }
+
+    if (isMagnet) {
+      acquirePowerSaveBlocker()
+      runtime.state.status = 'downloading'
+      runtime.state.error = undefined
       this.pushUpdate(runtime)
+      void this.runMagnetDownload(runtime)
       return
     }
 
@@ -795,14 +1149,24 @@ export class DownloadManager {
     )
     if (runtime.state.status !== 'paused' && runtime.state.status !== 'error') return
 
-    for (let index = 0; index < runtime.state.chunks.length; index++) {
-      const chunk = runtime.state.chunks[index]
-      const iface =
-        runtime.activeInterfaces.find((entry) => entry.id === chunk.interfaceId) ??
-        runtime.activeInterfaces[index % runtime.activeInterfaces.length]
-      chunk.interfaceId = iface.id
-      chunk.interfaceLabel = iface.displayName
-      chunk.interfaceKind = iface.kind
+    const prefs = await loadNetworkPreferences()
+    runtime.interfacePreferences = new Map(Object.entries(prefs))
+    if (!runtime.bytesDownloadedByInterface) {
+      runtime.bytesDownloadedByInterface = new Map(
+        runtime.state.chunks.map((c) => [c.interfaceId, c.bytesDownloaded])
+      )
+    }
+    for (const chunk of runtime.state.chunks) {
+      const pref = runtime.interfacePreferences.get(chunk.interfaceId)
+      const downloaded = runtime.bytesDownloadedByInterface.get(chunk.interfaceId) ?? 0
+      if (
+        !pref ||
+        pref.dataCapMode !== 'capped' ||
+        !pref.maxDataBytes ||
+        downloaded < pref.maxDataBytes
+      ) {
+        chunk.quotaReached = false
+      }
     }
 
     runtime.state.status = 'downloading'
@@ -827,17 +1191,26 @@ export class DownloadManager {
     runtime.avoidNetworkByBlock.clear()
     this.pushUpdate(runtime)
 
+    // Ensure placeholder file is reserved if it was previously discarded on error
+    try {
+      const handle = await open(runtime.state.destinationPath, 'wx')
+      await handle.close()
+    } catch {
+      // already exists or can't be created
+    }
+
     // Streams start in the order given, and each claims a block on the spot: interleaved, so a
     // paused download saved before that was the rule can't hand every block to one network.
     const pending = runtime.state.chunks.filter((chunk) => chunk.status !== 'completed')
     const toRun = pending.length > 0 ? pending : runtime.state.chunks
+    acquirePowerSaveBlocker()
     void this.runChunksToCompletion(
       runtime,
       interleave(toRun, (chunk) => chunk.interfaceId)
     )
   }
 
-  cancel(id: string): void {
+  cancel(id: string, skipPush = false): void {
     const runtime = this.runtimes.get(id)
     if (
       !runtime ||
@@ -847,12 +1220,20 @@ export class DownloadManager {
     )
       return
 
+    if ((runtime as any).magnetTicker) {
+      clearInterval((runtime as any).magnetTicker)
+      ;(runtime as any).magnetTicker = null
+    }
+
     if ((runtime as any).magnetClients) {
       const clientsList = (runtime as any).magnetClients
       if (Array.isArray(clientsList)) {
         for (const item of clientsList) {
           try {
-            item.client?.destroy()
+            if (item.torrent) {
+              item.torrent.destroy({ destroyStore: true }, () => {})
+            }
+            item.client?.destroy(() => {})
           } catch {
             // ignore
           }
@@ -870,7 +1251,12 @@ export class DownloadManager {
     for (const chunkRuntime of runtime.chunkRuntimes.values()) {
       chunkRuntime.controller.abort()
     }
-    this.pushUpdate(runtime, false)
+    if (!skipPush) {
+      this.pushUpdate(runtime, false)
+    }
+    if (!this.hasActiveDownload()) {
+      releasePowerSaveBlocker()
+    }
     void this.cleanupTempDir(runtime).catch(() => {})
     void this.discardUnfinishedDestination(runtime).catch(() => {})
     void this.removePersistedDownload(runtime).catch(() => {})
@@ -884,10 +1270,215 @@ export class DownloadManager {
         runtime.state.status === 'paused' ||
         runtime.state.status === 'error')
     ) {
-      this.cancel(id)
+      this.cancel(id, true)
     }
     this.runtimes.delete(id)
+    if (!this.hasActiveDownload()) {
+      releasePowerSaveBlocker()
+    }
     if (runtime) void this.removePersistedDownload(runtime).catch(() => {})
+  }
+
+  updateNetworkPreference(interfaceId: string, patch: NetworkPreference): void {
+    for (const runtime of this.runtimes.values()) {
+      if (!runtime.interfacePreferences) {
+        runtime.interfacePreferences = new Map()
+      }
+      const current = runtime.interfacePreferences.get(interfaceId) || {}
+      const updated = { ...current, ...patch }
+      runtime.interfacePreferences.set(interfaceId, updated)
+
+      const downloaded = runtime.bytesDownloadedByInterface?.get(interfaceId) ?? 0
+      const quotaCleared =
+        updated.dataCapMode !== 'capped' ||
+        !updated.maxDataBytes ||
+        downloaded < updated.maxDataBytes
+
+      if (quotaCleared) {
+        let changed = false
+        for (const chunk of runtime.state.chunks) {
+          if (chunk.interfaceId === interfaceId && chunk.quotaReached) {
+            chunk.quotaReached = false
+            changed = true
+          }
+        }
+        if (changed) {
+          if (
+            runtime.state.status === 'paused' &&
+            runtime.state.error === 'Data quota reached on all active interfaces'
+          ) {
+            runtime.state.error = undefined
+            this.resume(runtime.state.id)
+          } else {
+            this.scheduleUpdate(runtime)
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Dynamically evaluates available interfaces for active or paused downloads:
+   * - Automatically bonds newly plugged networks (e.g. Ethernet plugged in mid-download).
+   * - Gracefully removes disconnected interfaces without interrupting the transfer.
+   */
+  async syncInterfaces(availableInterfaces: NetworkInterfaceInfo[]): Promise<void> {
+    if (availableInterfaces.length === 0) return
+
+    for (const runtime of this.runtimes.values()) {
+      if (
+        runtime.state.status === 'completed' ||
+        runtime.state.status === 'cancelled' ||
+        runtime.state.status === 'assembling' ||
+        isSimulatedUrl(runtime.requestPayload.url)
+      ) {
+        continue
+      }
+
+      const isMagnet =
+        isMagnetUrl(runtime.requestPayload.url) || isTorrentFile(runtime.requestPayload.url)
+      const isSplittable = runtime.requestPayload.supportsRanges || isMagnet
+
+      const availableMap = new Map(availableInterfaces.map((i) => [i.id, i]))
+      const currentActiveMap = new Map(runtime.activeInterfaces.map((i) => [i.id, i]))
+
+      // 1. Detect newly connected interfaces
+      const newlyFound = isSplittable
+        ? availableInterfaces.filter((iface) => !currentActiveMap.has(iface.id))
+        : []
+
+      // 2. Detect disconnected interfaces
+      const disconnected = runtime.activeInterfaces.filter((iface) => !availableMap.has(iface.id))
+
+      let stateChanged = false
+
+      // Handle disconnected interfaces if other interfaces remain available
+      if (disconnected.length > 0 && runtime.activeInterfaces.length > disconnected.length) {
+        const disconnectedIds = new Set(disconnected.map((i) => i.id))
+        runtime.activeInterfaces = runtime.activeInterfaces.filter(
+          (i) => !disconnectedIds.has(i.id)
+        )
+        runtime.requestPayload.interfaceIds = runtime.requestPayload.interfaceIds.filter(
+          (id) => !disconnectedIds.has(id)
+        )
+
+        for (const iface of disconnected) {
+          runtime.consecutiveFailuresByInterface?.delete(iface.id)
+          runtime.quarantinedInterfaces?.delete(iface.id)
+          evictAgentForInterface(iface.address)
+        }
+
+        // If shielded interface disconnected, clear or re-evaluate shield
+        if (
+          runtime.state.shieldedInterfaceId &&
+          disconnectedIds.has(runtime.state.shieldedInterfaceId)
+        ) {
+          runtime.state.shieldedInterfaceId = undefined
+        }
+
+        // Remap chunk to a surviving active interface without terminating worker loop
+        for (const chunk of runtime.state.chunks) {
+          if (disconnectedIds.has(chunk.interfaceId)) {
+            const fallback = runtime.activeInterfaces[chunk.id % runtime.activeInterfaces.length]
+            chunk.interfaceId = fallback.id
+            chunk.interfaceLabel = fallback.displayName
+            chunk.interfaceKind = fallback.kind
+
+            const self = runtime.chunkRuntimes.get(chunk.id)
+            if (self) {
+              if (self.attempt) {
+                this.abortAttempt(self.attempt, 'disconnect')
+              }
+              // Do NOT call self.controller.abort() - let worker continue on fallback interface
+              self.failures = 0
+              self.warmSince = Date.now()
+            } else if (runtime.state.status === 'downloading' && runtime.addWorker) {
+              runtime.addWorker(chunk)
+            }
+          }
+        }
+
+        // For magnet clients:
+        if ((runtime as any).magnetClients) {
+          const clientsList = (runtime as any).magnetClients as any[]
+          for (const item of clientsList.filter((c) => disconnectedIds.has(c.interfaceId))) {
+            try {
+              if (item.torrent) item.torrent.destroy({ destroyStore: false }, () => {})
+              item.client?.destroy(() => {})
+            } catch {
+              // ignore
+            }
+          }
+          ;(runtime as any).magnetClients = clientsList.filter(
+            (c) => !disconnectedIds.has(c.interfaceId)
+          )
+        }
+
+        stateChanged = true
+      }
+
+      // Handle newly connected interfaces
+      if (newlyFound.length > 0) {
+        for (const iface of newlyFound) {
+          runtime.consecutiveFailuresByInterface?.delete(iface.id)
+          runtime.quarantinedInterfaces?.delete(iface.id)
+          evictAgentForInterface(iface.address)
+          runtime.activeInterfaces.push(iface)
+          if (!runtime.requestPayload.interfaceIds.includes(iface.id)) {
+            runtime.requestPayload.interfaceIds.push(iface.id)
+          }
+
+          const existingChunkCounts = runtime.activeInterfaces
+            .map((ai) => runtime.state.chunks.filter((c) => c.interfaceId === ai.id).length)
+            .filter((count) => count > 0)
+          const streamsToCreate = Math.max(
+            1,
+            Math.min(4, existingChunkCounts[0] || runtime.requestPayload.connectionsPerNetwork || 1)
+          )
+
+          const newChunks: ChunkState[] = []
+          for (let s = 0; s < streamsToCreate; s++) {
+            const nextId =
+              (runtime.state.chunks.length > 0
+                ? Math.max(...runtime.state.chunks.map((c) => c.id))
+                : -1) + 1
+            const newChunk: ChunkState = {
+              id: nextId,
+              interfaceId: iface.id,
+              interfaceLabel: iface.displayName,
+              interfaceKind: iface.kind,
+              rangeStart: 0,
+              rangeEnd: null,
+              bytesDownloaded: 0,
+              speedBytesPerSec: 0,
+              status: runtime.state.status === 'downloading' ? 'downloading' : 'paused',
+              retryCount: 0
+            }
+            runtime.state.chunks.push(newChunk)
+            newChunks.push(newChunk)
+          }
+
+          if (runtime.state.status === 'downloading') {
+            if (isMagnet) {
+              if (runtime.addMagnetInterface) {
+                runtime.addMagnetInterface(iface)
+              }
+            } else if (runtime.addWorker) {
+              for (const chunk of newChunks) {
+                runtime.addWorker(chunk)
+              }
+            }
+          }
+
+          stateChanged = true
+        }
+      }
+
+      if (stateChanged) {
+        this.pushUpdate(runtime)
+        void this.persistNow(runtime)
+      }
+    }
   }
 
   async suspendAll(): Promise<void> {
@@ -905,8 +1496,10 @@ export class DownloadManager {
     const { url, destinationDir } = runtime.requestPayload
 
     try {
-      const WebTorrentMod = await import('webtorrent')
-      const WebTorrent = WebTorrentMod.default || WebTorrentMod
+      const WebTorrent = await getWebTorrent()
+      if (!WebTorrent) {
+        throw new Error('BitTorrent engine could not be initialized')
+      }
 
       const magnetTrackers = extractMagnetTrackers(url)
 
@@ -943,7 +1536,7 @@ export class DownloadManager {
       for (const iface of interfacesToUse) {
         let client: any = null
         netBindingStorage.run(iface.address, () => {
-          client = new WebTorrent({ maxConns: 55 })
+          client = new WebTorrent({ maxConns: 100 })
         })
 
         const info = {
@@ -1000,15 +1593,13 @@ export class DownloadManager {
           }
         }
 
-        if (typeof torrent.throttleUpload === 'function') {
-          torrent.throttleUpload(15 * 1024)
-        }
-
         if (torrent.length && (!runtime.state.totalBytes || runtime.state.totalBytes === 0)) {
           runtime.state.totalBytes = torrent.length
         }
-        if (torrent.name && (!runtime.state.fileName || runtime.state.fileName === 'download')) {
+        if (torrent.name) {
           runtime.state.fileName = torrent.name
+          runtime.state.destinationPath = join(destinationDir, torrent.name)
+          this.scheduleUpdate(runtime)
         }
 
         const configurePieceSelection = () => {
@@ -1102,6 +1693,11 @@ export class DownloadManager {
           )
 
           if (allDone || torrent.progress === 1) {
+            if ((runtime as any).magnetTicker) {
+              clearInterval((runtime as any).magnetTicker)
+              ;(runtime as any).magnetTicker = null
+            }
+
             const finalBytes = runtime.state.totalBytes || torrent.length || torrent.downloaded
             runtime.state.bytesDownloaded = finalBytes
             runtime.state.speedBytesPerSec = 0
@@ -1118,6 +1714,14 @@ export class DownloadManager {
             }
             this.pushUpdate(runtime)
             void this.persistNow(runtime)
+            this.notify(
+              'Download Complete',
+              `${runtime.state.fileName} has finished downloading.`,
+              runtime.state.destinationPath
+            )
+            if (!this.hasActiveDownload()) {
+              releasePowerSaveBlocker()
+            }
 
             for (const item of clientsInfo) {
               try {
@@ -1135,6 +1739,9 @@ export class DownloadManager {
             runtime.state.status = 'error'
             runtime.state.error = err?.message || 'Magnet transfer error'
             this.pushUpdate(runtime)
+            if (!this.hasActiveDownload()) {
+              releasePowerSaveBlocker()
+            }
           }
         })
       }
@@ -1151,6 +1758,87 @@ export class DownloadManager {
           )
         })
       }
+
+      runtime.addMagnetInterface = (newIface: NetworkInterfaceInfo) => {
+        if (clientsInfo.some((item) => item.interfaceId === newIface.id)) return
+        let client: any = null
+        netBindingStorage.run(newIface.address, () => {
+          client = new WebTorrent({ maxConns: 100 })
+        })
+        const info = {
+          interfaceId: newIface.id,
+          iface: newIface,
+          client,
+          torrent: null as any,
+          downloadSpeed: 0,
+          downloaded: 0,
+          done: false
+        }
+        clientsInfo.push(info)
+
+        client.on('error', (err: any) => {
+          if (runtime.state.status === 'downloading' && clientsInfo.length === 1) {
+            runtime.state.status = 'error'
+            runtime.state.error = err?.message || 'BitTorrent client error'
+            this.pushUpdate(runtime)
+          }
+        })
+
+        const torrentSource = sharedTorrentFile || url
+        netBindingStorage.run(info.iface.address, () => {
+          info.client.add(
+            torrentSource,
+            { path: destinationDir, announce: magnetTrackers },
+            (torrent: any) => {
+              setupTorrentEvents(info, torrent)
+            }
+          )
+        })
+      }
+
+      // Periodic ticker to continuously sample moving throughput and prevent graph flatlining between piece boundaries
+      const ticker = setInterval(() => {
+        if (runtime.state.status !== 'downloading') {
+          clearInterval(ticker)
+          return
+        }
+
+        let anyActive = false
+        for (const item of clientsInfo) {
+          if (item.torrent && !item.torrent.destroyed) {
+            anyActive = true
+            item.downloadSpeed = item.torrent.downloadSpeed || 0
+            item.downloaded = item.torrent.downloaded || 0
+
+            const ifaceChunks = runtime.state.chunks.filter(
+              (c) => c.interfaceId === item.interfaceId
+            )
+            const chunkCount = ifaceChunks.length || 1
+            const perChunkSpeed = Math.round(item.downloadSpeed / chunkCount)
+            const perChunkDownloaded = Math.round(item.downloaded / chunkCount)
+
+            for (const chunk of ifaceChunks) {
+              chunk.speedBytesPerSec = perChunkSpeed
+              chunk.bytesDownloaded = perChunkDownloaded
+            }
+          }
+        }
+
+        if (!anyActive && clientsInfo.every((item) => item.done)) {
+          clearInterval(ticker)
+          return
+        }
+
+        const totalSpeed = clientsInfo.reduce((sum, item) => sum + item.downloadSpeed, 0)
+        const totalDownloaded = clientsInfo.reduce((sum, item) => sum + item.downloaded, 0)
+        const maxBytes = runtime.state.totalBytes || totalDownloaded
+
+        runtime.state.speedBytesPerSec = totalSpeed
+        runtime.state.bytesDownloaded = Math.min(maxBytes, totalDownloaded)
+        this.scheduleUpdate(runtime)
+      }, 500)
+
+      ;(runtime as any).magnetTicker = ticker
     } catch (err: any) {
       runtime.state.status = 'error'
       runtime.state.error = err?.message || 'Failed to initialize BitTorrent client'
@@ -1163,15 +1851,32 @@ export class DownloadManager {
     runtime: DownloadRuntime,
     chunks: ChunkState[]
   ): Promise<void> {
-    if (isMagnetUrl(runtime.requestPayload.url)) {
+    if (isMagnetUrl(runtime.requestPayload.url) || isTorrentFile(runtime.requestPayload.url)) {
       return this.runMagnetDownload(runtime)
     }
-    const active = new Map<number, Promise<number>>()
+    const active = new Map<number, Promise<void>>()
+    let signalWorkerFinished: (() => void) | null = null
+
+    const addWorker = (chunk: ChunkState): void => {
+      if (active.has(chunk.id)) return
+      const p = this.runWorker(runtime, chunk).finally(() => {
+        active.delete(chunk.id)
+        if (signalWorkerFinished) {
+          signalWorkerFinished()
+          signalWorkerFinished = null
+        }
+      })
+      active.set(chunk.id, p)
+      if (signalWorkerFinished) {
+        signalWorkerFinished()
+        signalWorkerFinished = null
+      }
+    }
+
+    runtime.addWorker = addWorker
+
     for (const chunk of chunks) {
-      active.set(
-        chunk.id,
-        this.runWorker(runtime, chunk).then(() => chunk.id)
-      )
+      addWorker(chunk)
     }
 
     const speedTicker = setInterval(() => {
@@ -1192,19 +1897,30 @@ export class DownloadManager {
 
     try {
       while (active.size > 0) {
-        const finishedId = await Promise.race(active.values())
-        active.delete(finishedId)
+        await new Promise<void>((resolve) => {
+          signalWorkerFinished = resolve
+        })
       }
     } finally {
+      runtime.addWorker = undefined
       clearInterval(speedTicker)
+      if (!this.hasActiveDownload()) {
+        releasePowerSaveBlocker()
+      }
     }
 
     if (runtime.state.status !== 'downloading') {
       // Paused, errored, or cancelled — nothing left to do right now.
-      if (runtime.state.status === 'error' || runtime.state.status === 'cancelled') {
+      if (runtime.state.status === 'cancelled') {
         this.pushUpdate(runtime)
         await this.cleanupTempDir(runtime)
         await this.discardUnfinishedDestination(runtime)
+      } else if (runtime.state.status === 'error') {
+        this.pushUpdate(runtime)
+        await this.cleanupTempDir(runtime)
+        await this.discardUnfinishedDestination(runtime)
+      } else {
+        this.pushUpdate(runtime)
       }
       return
     }
@@ -1219,11 +1935,25 @@ export class DownloadManager {
       runtime.state.status = 'completed'
       runtime.state.completedAt = Date.now()
       runtime.state.bytesDownloaded = runtime.state.totalBytes || runtime.state.bytesDownloaded
-      this.notify('Download Complete', `${runtime.state.fileName} has finished downloading.`)
+      this.notify(
+        'Download Complete',
+        `${runtime.state.fileName} has finished downloading.`,
+        runtime.state.destinationPath
+      )
+
+      if (runtime.requestPayload.completionAction === 'sleep') {
+        sleepSystem()
+      } else if (runtime.requestPayload.completionAction === 'shutdown') {
+        startShutdownCountdown(this.getWindow, 'shutdown', 30)
+      }
     } catch (error) {
       runtime.state.status = 'error'
       runtime.state.error = error instanceof Error ? error.message : String(error)
       this.notify('Download Failed', `${runtime.state.fileName}: ${runtime.state.error}`)
+    }
+
+    if (!this.hasActiveDownload()) {
+      releasePowerSaveBlocker()
     }
 
     this.pushUpdate(runtime)
@@ -1313,7 +2043,7 @@ export class DownloadManager {
     attempt.abort.abort()
   }
 
-  private notify(title: string, body: string): void {
+  private notify(title: string, body: string, filePath?: string): void {
     if (testKnobs.userDataDir || !Notification.isSupported()) return
     try {
       const notification = new Notification({ title, body })
@@ -1323,6 +2053,13 @@ export class DownloadManager {
           if (window.isMinimized()) window.restore()
           window.show()
           window.focus()
+        }
+        if (filePath && existsSync(filePath)) {
+          try {
+            shell.showItemInFolder(filePath)
+          } catch {
+            // ignore
+          }
         }
       })
       notification.show()
@@ -1462,6 +2199,22 @@ export class DownloadManager {
       const runDownload = isSimulatedUrl(runtime.requestPayload.url)
         ? downloadChunkSimulated
         : downloadChunk
+
+      const isSpeedTest = isSpeedTestFileName(runtime.requestPayload.suggestedFileName)
+      const pref = runtime.interfacePreferences?.get(iface.id)
+      let maxSpeedBytesPerSec: number | null = null
+      if (
+        !isSpeedTest &&
+        pref?.speedLimitMode === 'capped' &&
+        pref.maxSpeedBytesPerSec &&
+        pref.maxSpeedBytesPerSec > 0
+      ) {
+        const streamCount =
+          runtime.state.chunks.filter((c) => c.interfaceId === iface.id && !c.quotaReached)
+            .length || 1
+        maxSpeedBytesPerSec = Math.max(1024, Math.floor(pref.maxSpeedBytesPerSec / streamCount))
+      }
+
       await runDownload({
         url: runtime.requestPayload.url,
         rangeStart: block.rangeStart + attempt.startOffset,
@@ -1471,6 +2224,7 @@ export class DownloadManager {
         append: attempt.kind === 'primary' && attempt.startOffset > 0,
         signal: AbortSignal.any([self.controller.signal, attempt.abort.signal]),
         acceptedVersions: runtime.acceptedVersions,
+        maxSpeedBytesPerSec,
         onResponse: (info) => (attempt.response = info),
         onProgress: (bytesThisRun) => {
           const delta = bytesThisRun - attempt.received
@@ -1506,6 +2260,16 @@ export class DownloadManager {
       runtime.speedSamplesByChunk.set(chunk.id, samples)
     }
     chunk.speedBytesPerSec = pushSpeedSample(samples, self.receivedBytes, now)
+
+    if (runtime.bytesDownloadedByInterface) {
+      const prev = runtime.bytesDownloadedByInterface.get(attempt.networkId) ?? 0
+      runtime.bytesDownloadedByInterface.set(attempt.networkId, prev + deltaBytes)
+    }
+
+    if (deltaBytes > 0) {
+      runtime.consecutiveFailuresByInterface?.set(attempt.networkId, 0)
+      runtime.quarantinedInterfaces?.delete(attempt.networkId)
+    }
 
     // Only what gets the block further than it already was counts as progress: a racing attempt
     // re-fetches bytes the other already has.
@@ -1614,6 +2378,8 @@ export class DownloadManager {
         1000
     }
     self.failures = 0
+    runtime.consecutiveFailuresByInterface?.set(attempt.networkId, 0)
+    runtime.quarantinedInterfaces?.delete(attempt.networkId)
     // Whoever is still racing for the block has lost.
     for (const rival of runtime.attempts.get(block.index) ?? []) this.abortAttempt(rival, 'lost')
     this.recomputeAggregates(runtime)
@@ -1704,6 +2470,7 @@ export class DownloadManager {
         chunk.status = 'error'
         runtime.state.status = 'error'
         runtime.state.error = message
+        this.pushUpdate(runtime)
         for (const other of runtime.chunkRuntimes.values()) other.controller.abort()
         await cleanup
         return 'stop'
@@ -1720,6 +2487,27 @@ export class DownloadManager {
 
     self.failures += 1
     chunk.retryCount += 1
+
+    const isNetErr =
+      message.includes('Connection stalled') ||
+      message.includes('ETIMEDOUT') ||
+      message.includes('EHOSTUNREACH') ||
+      message.includes('ENETUNREACH') ||
+      message.includes('EADDRNOTAVAIL') ||
+      message.includes('socket hang up')
+
+    if (isNetErr && runtime.activeInterfaces.length > 1) {
+      runtime.consecutiveFailuresByInterface ??= new Map()
+      const ifaceFails = (runtime.consecutiveFailuresByInterface.get(iface.id) ?? 0) + 1
+      runtime.consecutiveFailuresByInterface.set(iface.id, ifaceFails)
+
+      if (ifaceFails >= 2) {
+        runtime.quarantinedInterfaces ??= new Map()
+        runtime.quarantinedInterfaces.set(iface.id, Date.now() + 10_000)
+        evictAgentForInterface(iface.address)
+      }
+    }
+
     // Back to the queue, so any available worker can pick it up.
     void this.letGo(runtime, chunk, self, attempt, deliveredNothing) // nothing to clean up: a primary
 
@@ -1727,9 +2515,20 @@ export class DownloadManager {
       chunk.status = 'error'
       const allErrored = runtime.state.chunks.every((c) => c.status === 'error')
       if (allErrored && (runtime.state.status as DownloadStatus) === 'downloading') {
-        runtime.state.status = 'error'
-        runtime.state.error = message
-        this.notify('Download Failed', `${runtime.state.fileName}: ${message}`)
+        const isExpired =
+          message.includes('403') ||
+          message.includes('401') ||
+          message.includes('410') ||
+          message.toLowerCase().includes('expired')
+        runtime.state.status = isExpired ? 'paused' : 'error'
+        runtime.state.error = isExpired
+          ? 'Download link has expired (HTTP 403 Forbidden). Update the link to resume.'
+          : message
+        this.notify(
+          isExpired ? 'Download Paused' : 'Download Failed',
+          `${runtime.state.fileName}: ${runtime.state.error}`
+        )
+        this.pushUpdate(runtime)
         for (const other of runtime.chunkRuntimes.values()) other.controller.abort()
       }
       return 'stop'
@@ -1794,12 +2593,7 @@ export class DownloadManager {
   }
 
   private async runWorker(runtime: DownloadRuntime, chunk: ChunkState): Promise<void> {
-    const iface =
-      runtime.activeInterfaces.find((i) => i.id === chunk.interfaceId) ??
-      runtime.activeInterfaces[chunk.id % runtime.activeInterfaces.length] ??
-      runtime.activeInterfaces[0]
-
-    if (!iface) {
+    if (runtime.activeInterfaces.length === 0) {
       chunk.status = 'error'
       chunk.error = 'No active network interface available'
       this.scheduleUpdate(runtime)
@@ -1821,6 +2615,89 @@ export class DownloadManager {
     while (runtime.state.status === 'downloading') {
       if (controller.signal.aborted) break
 
+      // Dynamically resolve current interface for hot-unplug / hot-replug fault recovery
+      let currentIface =
+        runtime.activeInterfaces.find((i) => i.id === chunk.interfaceId) ??
+        runtime.activeInterfaces[chunk.id % runtime.activeInterfaces.length] ??
+        runtime.activeInterfaces[0]
+
+      if (!currentIface) {
+        await delay(500, controller.signal)
+        continue
+      }
+
+      // If this interface is quarantined due to network errors (e.g. phone hotspot dropped),
+      // switch to an available healthy interface rather than stalling the stream at 0 B/s!
+      const now = Date.now()
+      const quarantineUntil = runtime.quarantinedInterfaces?.get(currentIface.id) ?? 0
+      if (quarantineUntil > now) {
+        const healthy = runtime.activeInterfaces.filter(
+          (i) => (runtime.quarantinedInterfaces?.get(i.id) ?? 0) <= now
+        )
+        if (healthy.length > 0) {
+          currentIface = healthy[chunk.id % healthy.length]
+        } else {
+          // All interfaces are experiencing errors, wait briefly before retrying
+          await delay(1000, controller.signal)
+          continue
+        }
+      }
+
+      chunk.interfaceId = currentIface.id
+      chunk.interfaceLabel = currentIface.displayName
+      chunk.interfaceKind = currentIface.kind
+
+      // Latency Shield Mode: if active, never pull chunks through the shielded low-latency interface
+      if (
+        runtime.state.latencyShieldEnabled &&
+        runtime.state.shieldedInterfaceId &&
+        currentIface.id === runtime.state.shieldedInterfaceId
+      ) {
+        const unshielded = runtime.activeInterfaces.filter(
+          (i) => i.id !== runtime.state.shieldedInterfaceId
+        )
+        if (unshielded.length > 0) {
+          const fallback = unshielded[chunk.id % unshielded.length]
+          chunk.interfaceId = fallback.id
+          chunk.interfaceLabel = fallback.displayName
+          chunk.interfaceKind = fallback.kind
+        } else {
+          // Cannot shield if only 1 interface is active - allow download to proceed!
+          runtime.state.shieldedInterfaceId = undefined
+        }
+      }
+
+      // Check if this interface has reached its data quota (speed tests are exempt from quotas)
+      const isSpeedTest = isSpeedTestFileName(runtime.requestPayload.suggestedFileName)
+      const pref = runtime.interfacePreferences?.get(currentIface.id)
+      const ifaceBytes = runtime.bytesDownloadedByInterface?.get(currentIface.id) ?? 0
+      if (
+        !isSpeedTest &&
+        pref?.dataCapMode === 'capped' &&
+        pref.maxDataBytes &&
+        pref.maxDataBytes > 0 &&
+        ifaceBytes >= pref.maxDataBytes
+      ) {
+        chunk.quotaReached = true
+        this.goIdle(chunk)
+        chunk.status = 'completed'
+
+        const allStreamsBlockedOrDone = runtime.state.chunks.every(
+          (c) => c.status === 'completed' || c.quotaReached
+        )
+        const pendingBlocks = runtime.blocks.some(
+          (b) => b.status === 'pending' || b.status === 'downloading'
+        )
+        if (allStreamsBlockedOrDone && pendingBlocks) {
+          runtime.state.status = 'paused'
+          runtime.state.error = 'Data quota reached on all active interfaces'
+          this.scheduleUpdate(runtime)
+          break
+        }
+        this.scheduleUpdate(runtime)
+        break
+      }
+
       // Taken atomically: nothing between choosing the work and registering it can yield.
       const work = pickWork(
         {
@@ -1830,7 +2707,7 @@ export class DownloadManager {
           avoid: runtime.avoidNetworkByBlock,
           hedgesUsed: runtime.hedgesByBlock
         },
-        { id: chunk.id, networkId: iface.id },
+        { id: chunk.id, networkId: currentIface.id },
         Date.now(),
         SCHEDULER_POLICY
       )
@@ -1848,12 +2725,12 @@ export class DownloadManager {
         break
       }
 
-      const attempt = this.beginAttempt(runtime, chunk, self, iface, work)
+      const attempt = this.beginAttempt(runtime, chunk, self, currentIface, work)
       this.scheduleUpdate(runtime)
-      const outcome = await this.executeAttempt(runtime, chunk, self, iface, attempt)
+      const outcome = await this.executeAttempt(runtime, chunk, self, currentIface, attempt)
       let next: 'continue' | 'stop'
       try {
-        next = await this.finishAttempt(runtime, chunk, self, iface, attempt, outcome)
+        next = await this.finishAttempt(runtime, chunk, self, currentIface, attempt, outcome)
       } finally {
         this.endAttempt(runtime, self, attempt)
       }
@@ -1942,12 +2819,14 @@ export class DownloadManager {
     // would put it back on screen after the renderer has already moved on.
     if (this.runtimes.get(runtime.state.id) !== runtime) return
     if (persist) this.schedulePersistence(runtime)
-    const window = this.getWindow()
-    if (!window || window.isDestroyed()) return
     if (runtime.state.status === 'paused' || runtime.state.status === 'cancelled') {
       runtime.state.speedBytesPerSec = 0
     }
-    window.webContents.send(IpcChannels.downloadUpdated, structuredClone(runtime.state))
+    const cloned = structuredClone(runtime.state)
+    this.onUpdateCallback?.(cloned)
+    const window = this.getWindow()
+    if (!window || window.isDestroyed()) return
+    window.webContents.send(IpcChannels.downloadUpdated, cloned)
   }
 
   /**

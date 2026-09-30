@@ -1,5 +1,6 @@
 import type { BlockState, ChunkState } from '@shared/types'
 import { useState } from 'react'
+import { useAppStore } from '../store/useAppStore'
 import { DANGER, type NetworkVisual } from '../theme'
 import type { NetworkGroup } from '../utils/format'
 import { formatBytes, formatSpeed } from '../utils/format'
@@ -82,8 +83,13 @@ export function NetworkRow({
   blocks
 }: NetworkRowProps): React.JSX.Element {
   const [expanded, setExpanded] = useState(false)
+  const preference = useAppStore((store) => store.networkPreferences[group.interfaceId])
   const hasError = group.chunks.some((chunk) => chunk.status === 'error')
   const isActive = group.chunks.some((chunk) => chunk.status === 'downloading')
+  const isStalled =
+    !hasError &&
+    group.speedBytesPerSec === 0 &&
+    group.chunks.some((chunk) => chunk.retryCount > 0 || chunk.status === 'retrying')
 
   const rounded = Math.round(sharePercent)
   const shareLabel = group.bytesDownloaded === 0 ? '0%' : rounded === 0 ? '<1%' : `${rounded}%`
@@ -96,12 +102,14 @@ export function NetworkRow({
       >
         <div
           role="cell"
-          aria-label={hasError ? 'Error' : isActive ? 'Active' : 'Idle'}
+          aria-label={
+            hasError ? 'Error' : isStalled ? 'Unresponsive' : isActive ? 'Active' : 'Idle'
+          }
           className="ml-5 size-2 rounded-full"
           style={{
-            background: hasError ? DANGER : visual.solid,
-            animation: isActive ? 'plexo-glow 1.8s infinite' : undefined,
-            opacity: isActive || hasError ? 1 : 0.65
+            background: hasError ? DANGER : isStalled ? '#f59e0b' : visual.solid,
+            animation: isActive && !isStalled ? 'plexo-glow 1.8s infinite' : undefined,
+            opacity: isActive || hasError || isStalled ? 1 : 0.65
           }}
         />
         <div role="cell" className="flex min-w-0 items-center gap-[6px]">
@@ -109,6 +117,27 @@ export function NetworkRow({
             text={visual.name}
             className="font-sans text-[12.5px] leading-[1.2] font-semibold text-foreground"
           />
+          {preference?.meteredMode === 'metered' && (
+            <span
+              title={
+                preference?.dataCapMode === 'capped' && preference.maxDataBytes
+                  ? `Metered (${formatBytes(preference.maxDataBytes)} cap)`
+                  : 'Metered (Unlimited data)'
+              }
+              className="rounded-[3px] border border-orange-500/30 bg-orange-500/10 px-1 py-0.5 font-mono text-[8.5px] font-semibold text-orange-400 shrink-0"
+            >
+              METERED
+            </span>
+          )}
+          {isStalled && (
+            <span
+              title="Interface connection is unresponsive or dropping packets. Check USB cable / Personal Hotspot toggle on phone."
+              className="rounded-[3px] border border-amber-500/40 bg-amber-500/15 px-1 py-0.5 font-mono text-[8.5px] font-semibold text-amber-500 dark:text-amber-400 shrink-0 flex items-center gap-1 cursor-help"
+            >
+              <span className="size-1 rounded-full bg-amber-500 animate-pulse" />
+              UNRESPONSIVE
+            </span>
+          )}
           <NetworkEditPopover
             interfaceId={group.interfaceId}
             interfaceKind={group.interfaceKind}
@@ -151,12 +180,26 @@ export function NetworkRow({
           style={{ color: isActive ? visual.text : 'var(--text-tertiary)' }}
         >
           {isActive ? formatSpeed(group.speedBytesPerSec) : '—'}
+          {preference?.speedLimitMode === 'capped' &&
+            preference.maxSpeedBytesPerSec != null &&
+            preference.maxSpeedBytesPerSec > 0 && (
+              <div className="mt-1 text-[9.5px] font-normal text-muted-foreground">
+                max {formatSpeed(preference.maxSpeedBytesPerSec)}
+              </div>
+            )}
         </div>
         <div
           role="cell"
           className="pr-5 text-right font-mono text-[11.5px] leading-none text-[var(--text-secondary)] tabular-nums"
         >
           {formatBytes(group.bytesDownloaded)}
+          {preference?.dataCapMode === 'capped' &&
+            preference.maxDataBytes != null &&
+            preference.maxDataBytes > 0 && (
+              <span className="ml-1 text-[10px] text-muted-foreground">
+                / {formatBytes(preference.maxDataBytes)}
+              </span>
+            )}
         </div>
       </div>
 
@@ -166,16 +209,19 @@ export function NetworkRow({
           const isLast = index === group.chunks.length - 1
           const isChunkActive = chunk.status === 'downloading'
           const isChunkError = chunk.status === 'error'
+          const isQuota = Boolean(chunk.quotaReached)
           const stream = describeStream(chunk, blocks)
-          const statusText = stream.done
-            ? 'Done'
-            : chunk.status === 'paused'
-              ? 'Paused'
-              : chunk.status === 'retrying'
-                ? 'Retrying…'
-                : chunk.status === 'error'
-                  ? 'Failed'
-                  : 'Idle'
+          const statusText = isQuota
+            ? 'Cap Reached'
+            : stream.done
+              ? 'Done'
+              : chunk.status === 'paused'
+                ? 'Paused'
+                : chunk.status === 'retrying'
+                  ? 'Retrying…'
+                  : chunk.status === 'error'
+                    ? 'Failed'
+                    : 'Idle'
 
           return (
             <div
@@ -216,7 +262,11 @@ export function NetworkRow({
                     BACKUP
                   </span>
                 )}
-                {isChunkActive ? (
+                {isQuota ? (
+                  <span className="rounded-[3px] border-[0.5px] border-amber-500/40 bg-amber-500/10 px-[4.5px] py-[1.5px] font-mono text-[9px] font-semibold leading-none whitespace-nowrap text-amber-500">
+                    CAP REACHED
+                  </span>
+                ) : isChunkActive ? (
                   <ColorBadge
                     bg={visual.bg}
                     border={visual.border}

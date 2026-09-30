@@ -83,6 +83,30 @@ test.describe('UI journeys @smoke', () => {
     ).toBeVisible()
   })
 
+  test('cancel with delete checked removes the download from list and disk', async ({
+    plexo,
+    serve,
+    dirs
+  }) => {
+    const origin = await serve({ size: SIZE })
+    await stubNativeUi(plexo, dirs.dest)
+    const page = plexo.page
+    await page.getByRole('button', { name: 'Browse…' }).click()
+    await page.getByRole('textbox', { name: 'LINK' }).fill(origin.url())
+
+    const reached = origin.hold(6 * BLOCK)
+    await page.getByRole('button', { name: 'Start' }).click()
+    await reached
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await page.getByText(/Delete partially downloaded files/).click()
+    await page.getByRole('button', { name: 'Cancel download' }).click()
+    origin.release()
+
+    // File list should not contain the deleted download
+    await expect(page.getByRole('button', { name: 'Download Again' })).toHaveCount(0)
+    await expect(page.getByText('test.bin')).toHaveCount(0)
+  })
+
   test('a link the server rejects shows the error and keeps Start disabled', async ({
     plexo,
     serve

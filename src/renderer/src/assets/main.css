@@ -72,7 +72,7 @@
   --color-neutral-text: #4b5563;
   --color-neutral-onsolid: #ffffff;
 
-  --color-accent: #d97706;
+  --color-accent: #0e4a8e;
   --color-accent-onsolid: #ffffff;
   --color-success: #1f8a70;
 
@@ -123,8 +123,69 @@
   --radius-xl: calc(var(--radius) * 1.4);
 }
 
+:root.dark,
+[data-theme='dark'] {
+  --hero-bg: linear-gradient(180deg, #202325 0%, #1b1e20 100%);
+  --hero-border: #2b2f33;
+  --bg: #1b1e20;
+  --bg-secondary: #202325;
+  --bg-tertiary: #202325;
+  --input-bg: #242729;
+  --track-bg: #262a2d;
+
+  --text: #eae7e2;
+  --text-secondary: #a9adb2;
+  --text-tertiary: #8d9196;
+
+  --border: #2b2f33;
+  --border-subtle: #23262a;
+  --border-strong: #33383c;
+  --footer-border: #2b2f33;
+
+  --icon-muted: #33383c;
+  --icon-muted-strong: #3a3f44;
+  --scrollbar-thumb: #3a3f44;
+
+  --checkbox-shadow: rgba(0, 0, 0, 0.4);
+  --checkbox-inset-shadow: rgba(0, 0, 0, 0.3);
+
+  --color-wifi: #4ea89a;
+  --color-wifi-bg: #22312e;
+  --color-wifi-border: #3a5450;
+  --color-wifi-text: #7fc9bb;
+  --color-wifi-onsolid: #10201d;
+
+  --color-usb: #d8a44c;
+  --color-usb-bg: #33291a;
+  --color-usb-border: #54421f;
+  --color-usb-text: #e8bb6d;
+  --color-usb-onsolid: #221806;
+
+  --color-ethernet: #7e93bd;
+  --color-ethernet-bg: #232a38;
+  --color-ethernet-border: #3a4660;
+  --color-ethernet-text: #a7b8db;
+  --color-ethernet-onsolid: #141a26;
+
+  --color-neutral: #8d9196;
+  --color-neutral-bg: #26292c;
+  --color-neutral-border: #3a3f44;
+  --color-neutral-text: #a9adb2;
+  --color-neutral-onsolid: #16181a;
+
+  --color-accent: #3b82f6;
+  --color-accent-onsolid: #ffffff;
+  --color-success: #4ea89a;
+
+  --color-danger: #eda3a3;
+  --color-danger-bg: #2c1c1c;
+  --color-danger-border: #4a2a2a;
+
+  --node-accent: #f7f4ef;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light):not([data-theme='light']) {
     --hero-bg: linear-gradient(180deg, #202325 0%, #1b1e20 100%);
     --hero-border: #2b2f33;
     /* Graphite instrument-panel background — exact hex values from the "Plexo v2" design doc. */
@@ -174,8 +235,8 @@
     --color-neutral-text: #a9adb2;
     --color-neutral-onsolid: #16181a;
 
-    --color-accent: #d8a44c;
-    --color-accent-onsolid: #1b1408;
+    --color-accent: #3b82f6;
+    --color-accent-onsolid: #ffffff;
     --color-success: #4ea89a;
 
     --color-danger: #eda3a3;

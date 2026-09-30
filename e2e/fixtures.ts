@@ -105,8 +105,11 @@ export class PlexoApp {
     this.sessions.push(session)
     await this.page.exposeFunction('__plexoRecord', (state: DownloadState) => session.push(state))
     await this.page.evaluate(() => {
-      const w = window as unknown as { __plexoRecord: (s: unknown) => void }
-      window.plexo.onDownloadUpdated((state) => w.__plexoRecord(state))
+      const w = window as unknown as {
+        __plexoRecord: (s: unknown) => void
+        plexo: { onDownloadUpdated: (cb: (state: unknown) => void) => void }
+      }
+      w.plexo.onDownloadUpdated((state: unknown) => w.__plexoRecord(state))
     })
     return this
   }
@@ -115,7 +118,15 @@ export class PlexoApp {
   async kill(): Promise<void> {
     const child = this.electronApp.process()
     const exited = new Promise((resolve) => child.once('exit', resolve))
-    child.kill('SIGKILL')
+    if (process.platform === 'win32' && child.pid) {
+      try {
+        await promisify(execFile)('taskkill', ['/F', '/T', '/PID', String(child.pid)])
+      } catch {
+        child.kill('SIGKILL')
+      }
+    } else {
+      child.kill('SIGKILL')
+    }
     await exited
     this.alive = false
   }
@@ -137,9 +148,9 @@ export class PlexoApp {
       (...args: unknown[]) =>
         this.page.evaluate(
           ([method, params]) =>
-            (window.plexo as unknown as Record<string, (...a: unknown[]) => unknown>)[method](
-              ...params
-            ),
+            (window as unknown as { plexo: Record<string, (...a: unknown[]) => unknown> }).plexo[
+              method
+            ](...params),
           [name, args] as const
         )
   })
@@ -380,7 +391,10 @@ export async function makeDirs(): Promise<{
   const root = await realpath(await mkdtemp(join(tmpdir(), 'plexo-e2e-')))
   const dirs = { userData: join(root, 'userData'), dest: join(root, 'dest') }
   await Promise.all([mkdir(dirs.userData), mkdir(dirs.dest)])
-  return { dirs, dispose: () => rm(root, { recursive: true, force: true, maxRetries: 5 }) }
+  return {
+    dirs,
+    dispose: () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+  }
 }
 
 interface Fixtures {
