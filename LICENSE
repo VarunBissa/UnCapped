@@ -1,0 +1,107 @@
+MIT License
+
+Copyright (c) 2026 Anmol Kapil, Varun Bissa
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+PLAIN-ENGLISH USAGE GUIDE & TERMS OF USE
+================================================================================
+
+This section provides a clear, human-readable summary of your rights, guidelines,
+and best practices when using, sharing, or developing UnCapped. This guide is
+intended to help you understand how you can use this application. The legal terms
+above remain the governing license.
+
+--------------------------------------------------------------------------------
+1. WHAT YOU ARE FREE TO DO
+--------------------------------------------------------------------------------
+
+✔ Free for Everyone:
+  You can download, install, and run UnCapped completely free of charge for personal,
+  educational, research, or commercial purposes.
+
+✔ Modify and Customize:
+  You can modify the source code, tweak themes and UI styling, change connection
+  parameters, add new features, or adapt it to your specific workflows.
+
+✔ Share and Distribute:
+  You can freely share installers (Windows .exe, macOS .app, Linux bundles) or the
+  source code with colleagues, friends, family, or your organization.
+
+✔ Integrate and Bundle:
+  You can include UnCapped or its components in other projects, internal tools,
+  or commercial distributions, provided you include the copyright notice and license.
+
+--------------------------------------------------------------------------------
+2. YOUR RESPONSIBILITIES & CONDITIONS
+--------------------------------------------------------------------------------
+
+• Keep the Copyright Notice:
+  If you distribute copies of the software or forks of the code, you must include the
+  original copyright notice ("Copyright (c) 2026 Anmol Kapil, Varun Bissa") and the MIT License text.
+
+• No Warranty ("As Is"):
+  The software is provided without any warranty. The creators do not guarantee that the
+  software will always be uninterrupted, bug-free, or compatible with every network adapter.
+
+--------------------------------------------------------------------------------
+3. RESPONSIBLE & ACCEPTABLE USE GUIDELINES
+--------------------------------------------------------------------------------
+
+When running UnCapped, please follow these guidelines:
+
+1. Download Authorization & Copyright Respect:
+   Only download files, media, software, and content that you are legally authorized
+   to access and download. UnCapped is a neutral, high-performance transfer accelerator
+   tool; users are solely responsible for ensuring their downloads comply with all
+   applicable local, national, and international laws.
+
+2. Mobile Data & ISP Plan Awareness:
+   UnCapped bonds multiple network connections simultaneously (such as Wi-Fi + 5G/4G
+   USB tethering + Ethernet). Because work is distributed across all active adapters:
+   - Data consumed on tethered devices counts toward your carrier data plans and hot-spot limits.
+   - You are responsible for monitoring your data allowances and any potential carrier fees
+     or overage charges.
+   - Use the built-in interface toggle switches in UnCapped to disable any metered connections
+     you do not wish to use for a particular transfer.
+
+3. Server Etiquette & Rate Limits:
+   UnCapped utilizes multi-stream concurrent HTTP Range requests (up to 8 streams per
+   interface). Ensure destination servers permit multi-connection downloading and respect
+   any explicit rate limits or Terms of Service imposed by remote hosts.
+
+--------------------------------------------------------------------------------
+4. FREQUENTLY ASKED QUESTIONS (FAQ)
+--------------------------------------------------------------------------------
+
+Q: Do I need to pay any license fees or royalties to use UnCapped?
+A: No. UnCapped is 100% free and open-source under the MIT License.
+
+Q: Can I use UnCapped in a commercial or corporate office setting?
+A: Yes. Commercial use is explicitly permitted without fees.
+
+Q: Can I fork this repository and release my own modified version?
+A: Yes. You can fork, rename, add new features, and distribute your modified version,
+   as long as you include the original MIT license notice.
+
+Q: Who is responsible if I run into carrier data overage charges?
+A: The user is solely responsible for network usage and carrier costs. As stated in the
+   warranty disclaimer, authors and contributors accept no liability for data costs,
+   hardware issues, or third-party server actions.

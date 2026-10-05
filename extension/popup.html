@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UnCapped Integration</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <div class="brand">
+          <div class="logo-box">
+            <img src="icons/icon32.png" alt="UnCapped" class="logo-icon" />
+          </div>
+          <div>
+            <h1 class="title">UnCapped</h1>
+            <p class="subtitle">Multi-Network Bonding</p>
+          </div>
+        </div>
+      </header>
+
+      <div class="status-card" id="status-card">
+        <div class="status-indicator">
+          <span class="status-dot" id="status-dot"></span>
+          <span class="status-text" id="status-text">Checking UnCapped...</span>
+        </div>
+        <p class="status-subtext" id="status-subtext"></p>
+      </div>
+
+      <div class="section">
+        <label class="switch-row">
+          <div class="switch-info">
+            <span class="switch-title">Auto-Intercept Downloads</span>
+            <span class="switch-desc">Route browser downloads into UnCapped</span>
+          </div>
+          <input type="checkbox" id="intercept-toggle" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="section">
+        <label for="size-filter" class="field-label">MINIMUM FILE SIZE</label>
+        <select id="size-filter" class="select-input">
+          <option value="0">All files (recommended)</option>
+          <option value="5">Files larger than 5 MB</option>
+          <option value="20">Files larger than 20 MB</option>
+          <option value="50">Files larger than 50 MB</option>
+          <option value="100">Files larger than 100 MB</option>
+        </select>
+      </div>
+
+      <div class="info-card">
+        <div class="info-header">
+          <span class="info-icon">📁</span>
+          <span class="info-title">Download Destination</span>
+        </div>
+        <p class="info-text">
+          Downloads automatically save to the path selected in Chrome (or Chrome's default folder).
+        </p>
+        <p class="info-tip">
+          💡 To choose folder for every download, toggle
+          <strong>"Ask where to save each file"</strong> in Chrome Settings.
+        </p>
+      </div>
+
+      <footer class="footer">
+        <button type="button" id="refresh-btn" class="btn btn-secondary">Check Connection</button>
+      </footer>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,51 @@
+appId: com.uncapped.app
+productName: UnCapped
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  # koffi is only loaded on Linux (network/deviceBinding.ts) and ships prebuilds for every OS.
+  - '!node_modules/koffi/{src,vendor,doc}/**'
+  - '!node_modules/koffi/build/koffi/!(linux_x64|linux_arm64)/**'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+asarUnpack:
+  - resources/**
+win:
+  executableName: uncapped
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+mac:
+  target:
+    - target: dmg
+      arch: [x64]
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    - NSDownloadsFolderUsageDescription: UnCapped saves downloaded files to your Downloads folder.
+  notarize: false
+dmg:
+  artifactName: ${name}-${version}.${ext}
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  maintainer: electronjs.org
+  category: Utility
+appImage:
+  artifactName: ${name}-${version}.${ext}
+npmRebuild: false
+publish:
+  provider: github
+  owner: VarunBissa
+  repo: UnCapped
+  releaseType: release
+
