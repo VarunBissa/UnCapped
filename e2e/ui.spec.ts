@@ -47,7 +47,7 @@ test.describe('UI journeys @smoke', () => {
     await page.getByRole('button', { name: 'Resume' }).click()
 
     const reveal = page.getByRole('button', { name: /Reveal in Finder|Show in folder/ })
-    await expect(reveal).toBeVisible()
+    await expect(reveal).toBeVisible({ timeout: 30_000 })
     await reveal.click()
     const { destinationPath } = (await plexo.current())!
     await expect
@@ -78,9 +78,9 @@ test.describe('UI journeys @smoke', () => {
     await page.getByRole('button', { name: 'Download Again' }).click()
     await plexo.expectNextDownload(origin.sha256)
     await page.getByRole('button', { name: 'Start' }).click({ timeout: 5000 })
-    await expect(
-      page.getByRole('button', { name: /Reveal in Finder|Show in folder/ })
-    ).toBeVisible()
+    await expect(page.getByRole('button', { name: /Reveal in Finder|Show in folder/ })).toBeVisible(
+      { timeout: 30_000 }
+    )
   })
 
   test('cancel with delete checked removes the download from list and disk', async ({

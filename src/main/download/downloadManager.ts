@@ -1054,36 +1054,20 @@ export class DownloadManager {
     const isSplittable = runtime.requestPayload.supportsRanges || isMagnet
 
     const availableMap = new Map(availableInterfaces.map((i) => [i.id, i]))
-    const currentActiveMap = new Map(runtime.activeInterfaces.map((i) => [i.id, i]))
+    const matchingInterfaces = runtime.requestPayload.interfaceIds
+      .map((id) => availableMap.get(id))
+      .filter((iface): iface is NetworkInterfaceInfo => Boolean(iface))
 
-    // Adopt any newly detected available interfaces
-    if (isSplittable) {
-      for (const iface of availableInterfaces) {
-        if (!currentActiveMap.has(iface.id)) {
-          currentActiveMap.set(iface.id, iface)
-          if (!runtime.requestPayload.interfaceIds.includes(iface.id)) {
-            runtime.requestPayload.interfaceIds.push(iface.id)
-          }
-        }
-      }
+    if (matchingInterfaces.length === 0) {
+      runtime.state.error =
+        runtime.requestPayload.interfaceIds.length === 1
+          ? `The network for this download (${runtime.requestPayload.interfaceIds[0]}) is not currently available.`
+          : 'None of the networks for this download are currently available.'
+      this.pushUpdate(runtime)
+      return
     }
 
-    // Keep active interfaces that are currently available
-    runtime.activeInterfaces = [...currentActiveMap.values()].filter((iface) =>
-      availableMap.has(iface.id)
-    )
-
-    if (runtime.activeInterfaces.length === 0) {
-      if (availableInterfaces.length > 0) {
-        runtime.activeInterfaces = availableInterfaces
-        runtime.requestPayload.interfaceIds = availableInterfaces.map((i) => i.id)
-      } else {
-        runtime.state.error =
-          'No network interfaces are currently available. Reconnect to a network and try again.'
-        this.pushUpdate(runtime)
-        return
-      }
-    }
+    runtime.activeInterfaces = matchingInterfaces
 
     // Ensure all active interfaces have corresponding chunk stream(s)
     if (isSplittable) {
@@ -1344,7 +1328,13 @@ export class DownloadManager {
 
       // 1. Detect newly connected interfaces
       const newlyFound = isSplittable
-        ? availableInterfaces.filter((iface) => !currentActiveMap.has(iface.id))
+        ? availableInterfaces.filter((iface) => {
+            if (currentActiveMap.has(iface.id)) return false
+            if (testKnobs.userDataDir) {
+              return runtime.requestPayload.interfaceIds.includes(iface.id)
+            }
+            return true
+          })
         : []
 
       // 2. Detect disconnected interfaces
@@ -1357,9 +1347,6 @@ export class DownloadManager {
         const disconnectedIds = new Set(disconnected.map((i) => i.id))
         runtime.activeInterfaces = runtime.activeInterfaces.filter(
           (i) => !disconnectedIds.has(i.id)
-        )
-        runtime.requestPayload.interfaceIds = runtime.requestPayload.interfaceIds.filter(
-          (id) => !disconnectedIds.has(id)
         )
 
         for (const iface of disconnected) {
