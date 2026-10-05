@@ -63,10 +63,25 @@ File ──→ Split ─────┼── Ethernet (IP: 10.0.0.12) ───
 - 🔀 **Mid-download redirect handling** — transparently follows 3xx HTTP redirects (up to 5 hops) during probing and individual chunk downloads.
 - 📊 **Real-time telemetry** — live throughput graphs, rolling-window ETA calculation, and per-connection transfer stats.
 - 🗺️ **Interactive progress grid** — 1:1 visual map of individual chunks, color-coded by the network interface that fetched each chunk with accurate per-network byte attribution.
+- 🧩 **Browser Extension** — Chrome and Chromium extension automatically intercepts browser downloads and forwards authenticated cookies to accelerate transfers seamlessly.
 - 🎨 **Network customization** — rename and recolor physical network interfaces with persistent user preferences.
 - 🌓 **Light & Dark modes** — full theme support with an instant toggle between light and dark modes.
 
 ---
+
+## 🧩 Browser Extension (Chrome, Edge, Brave, Arc)
+
+UnCapped includes a companion browser extension for all Chromium-based browsers that automatically routes downloads from your browser into UnCapped:
+
+### Quick Installation:
+1. Download **`uncapped-chrome-extension.zip`** from the [Latest Release](https://github.com/VarunBissa/UnCapped/releases/latest).
+2. Unzip the file into a folder on your computer.
+3. Open `chrome://extensions` (or `edge://extensions` / `brave://extensions`) in your browser.
+4. Toggle **Developer mode** (top-right switch).
+5. Click **Load unpacked** and select the unzipped folder.
+6. Open the UnCapped desktop app — any download you start in the browser will now accelerate over your combined network connections!
+
+> For full configuration options, size filters, and troubleshooting, read the **[Extension Guide](extension/README.md)**.
 
 # How it works
 

@@ -346,9 +346,17 @@ The main process runs an HTTP server bound strictly to the local loopback addres
   - `GET /health`: Returns `{ status: 'ok', app: 'UnCapped', version: '...' }`.
   - `POST /download`: Accepts JSON payloads containing `{ url, cookies, referrer, suggestedFileName }`.
 - **Security Controls**:
-  - **Loopback Only**: Bound strictly to `127.0.0.1`. Remote network connections are rejected at the TCP level.
-  - **Shared Secret Authentication**: Requests must include an `X-UnCapped-Token` authentication header matching the session token generated at application startup.
-  - **CORS Protection**: Access is restricted to `chrome-extension://*` origins.
+### 6.3 Extension Installation & Setup
+
+1. **Download Release Package**: Download `uncapped-chrome-extension.zip` from [Releases](https://github.com/VarunBissa/UnCapped/releases) and extract it.
+2. **Load into Browser**:
+   - Open `chrome://extensions` (or `edge://extensions`, `brave://extensions`).
+   - Turn **ON** **Developer mode** in the top right.
+   - Click **Load unpacked** and select the extracted `extension` directory.
+3. **Usage**:
+   - Ensure the UnCapped desktop app is running.
+   - Click the UnCapped extension icon in the browser toolbar to confirm connection.
+   - Any initiated download (or right-click context menu "Download with UnCapped") will automatically hand off to the UnCapped multi-interface acceleration engine.
 
 ---
 
