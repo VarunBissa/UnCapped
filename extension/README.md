@@ -36,6 +36,7 @@ Compatible with **Google Chrome**, **Microsoft Edge**, **Brave**, **Arc**, **Ope
 ### Option 2: From Source Repository
 
 If you have cloned the UnCapped repository locally:
+
 1. Open `chrome://extensions` (or your browser's extension page).
 2. Enable **Developer mode**.
 3. Click **Load unpacked** and select the `extension/` directory located inside the root of the UnCapped repository.
@@ -57,24 +58,25 @@ If you have cloned the UnCapped repository locally:
 ## ⚙️ Extension Settings
 
 Click the toolbar popup to configure:
+
 - **Auto-Intercept Downloads**: Toggle ON/OFF automatic browser download capture.
 - **Minimum File Size**: Choose when UnCapped steps in:
-  - *All files* (Recommended)
-  - *Files larger than 5 MB*
-  - *Files larger than 20 MB*
-  - *Files larger than 50 MB*
-  - *Files larger than 100 MB*
+  - _All files_ (Recommended)
+  - _Files larger than 5 MB_
+  - _Files larger than 20 MB_
+  - _Files larger than 50 MB_
+  - _Files larger than 100 MB_
 - **Check Connection**: Quickly test the loopback bridge between your browser and the desktop app.
 
 ---
 
 ## ❓ Troubleshooting
 
-| Issue | Solution |
-| :--- | :--- |
-| **"UnCapped is not running"** | Ensure the UnCapped desktop application is opened on your computer. The extension communicates via local port `http://127.0.0.1:23851`. |
+| Issue                                        | Solution                                                                                                                                                  |
+| :------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **"UnCapped is not running"**                | Ensure the UnCapped desktop application is opened on your computer. The extension communicates via local port `http://127.0.0.1:23851`.                   |
 | **Browser warning about unpacked extension** | Chromium browsers show a warning for extensions installed in Developer Mode. This is normal for unpacked open-source extensions. Click "Keep" or dismiss. |
-| **Download doesn't start** | If a website uses blob URLs or complex javascript blobs, right-click the final direct URL and choose **Download with UnCapped**. |
+| **Download doesn't start**                   | If a website uses blob URLs or complex javascript blobs, right-click the final direct URL and choose **Download with UnCapped**.                          |
 
 ---
 

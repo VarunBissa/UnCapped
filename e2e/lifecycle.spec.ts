@@ -191,6 +191,7 @@ test.describe('resume safety checks @smoke', () => {
 
     const setInterfaces = (value: string): Promise<void> =>
       plexo.evaluateMain((_electron, v) => {
+        process.env['UNCAPPED_E2E_INTERFACES'] = v
         process.env['PLEXO_E2E_INTERFACES'] = v
       }, value)
 

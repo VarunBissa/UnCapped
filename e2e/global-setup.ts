@@ -36,6 +36,7 @@ export default async function globalSetup(): Promise<void> {
   const lan = await findLanAddress()
   process.env.UNCAPPED_E2E_LAN ??= lan
   process.env.PLEXO_E2E_LAN ??= lan
-  if (process.env.UNCAPPED_E2E_SKIP_BUILD === '1' || process.env.PLEXO_E2E_SKIP_BUILD === '1') return
+  if (process.env.UNCAPPED_E2E_SKIP_BUILD === '1' || process.env.PLEXO_E2E_SKIP_BUILD === '1')
+    return
   execSync('npx electron-vite build', { stdio: 'inherit' })
 }

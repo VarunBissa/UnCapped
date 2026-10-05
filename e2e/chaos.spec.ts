@@ -22,9 +22,10 @@ import { Origin, type Fault } from './origin'
 // PLEXO_CHAOS_RUNS sets how many sequences to try (default 5; nightly runs more).
 
 const RUNS = Number(process.env.UNCAPPED_CHAOS_RUNS ?? process.env.PLEXO_CHAOS_RUNS ?? 5)
-const SEED = (process.env.UNCAPPED_CHAOS_SEED || process.env.PLEXO_CHAOS_SEED)
-  ? Number(process.env.UNCAPPED_CHAOS_SEED || process.env.PLEXO_CHAOS_SEED)
-  : undefined
+const SEED =
+  process.env.UNCAPPED_CHAOS_SEED || process.env.PLEXO_CHAOS_SEED
+    ? Number(process.env.UNCAPPED_CHAOS_SEED || process.env.PLEXO_CHAOS_SEED)
+    : undefined
 const SIZE = 48 * BLOCK
 
 interface Model {

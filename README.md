@@ -8,6 +8,7 @@
 A lightning-fast, high-performance download manager for **Windows, macOS, and Linux** that accelerates file transfers by aggregating and pulling chunks in parallel across **multiple network connections simultaneously**.
 
 If your machine is connected to multiple networks at once — for example:
+
 - **Wi-Fi** (Home or Office broadband)
 - **Ethernet** (High-speed LAN)
 - **USB Mobile Tethering** (4G / 5G iPhone or Android)
@@ -74,6 +75,7 @@ File ──→ Split ─────┼── Ethernet (IP: 10.0.0.12) ───
 UnCapped includes a companion browser extension for all Chromium-based browsers that automatically routes downloads from your browser into UnCapped:
 
 ### Quick Installation:
+
 1. Download **`uncapped-chrome-extension.zip`** from the [Latest Release](https://github.com/VarunBissa/UnCapped/releases/latest).
 2. Unzip the file into a folder on your computer.
 3. Open `chrome://extensions` (or `edge://extensions` / `brave://extensions`) in your browser.
@@ -228,11 +230,11 @@ Pre-compiled standalone releases and installers are published on the GitHub Rele
 
 👉 **[Download the Latest Release of UnCapped](https://github.com/VarunBissa/UnCapped/releases)**
 
-| Operating System | Package Format | Details |
-| :--- | :--- | :--- |
-| **Windows** | `.exe` (NSIS Installer) | Supports Windows 10 & 11 (x64 / ARM64) |
-| **macOS** | `.dmg` (Disk Image) | Universal binary for Apple Silicon (M1/M2/M3) and Intel |
-| **Linux** | `.AppImage`, `.deb` | Modern Linux distributions (Ubuntu, Debian, Fedora, Arch) |
+| Operating System | Package Format          | Details                                                   |
+| :--------------- | :---------------------- | :-------------------------------------------------------- |
+| **Windows**      | `.exe` (NSIS Installer) | Supports Windows 10 & 11 (x64 / ARM64)                    |
+| **macOS**        | `.dmg` (Disk Image)     | Universal binary for Apple Silicon (M1/M2/M3) and Intel   |
+| **Linux**        | `.AppImage`, `.deb`     | Modern Linux distributions (Ubuntu, Debian, Fedora, Arch) |
 
 ---
 
@@ -249,26 +251,31 @@ UnCapped includes a built-in automated release detection and update workflow:
 # How to Use UnCapped
 
 ### 1. Connect Your Network Adapters
+
 - Plug in your Ethernet cable, join your Wi-Fi network, and/or enable USB tethering on your mobile device (iOS Personal Hotspot or Android USB Tethering).
 - Open UnCapped. The top **Networks** bar will automatically detect and display all your active network connections.
 - Click on any network card to customize its display name, change its accent color, or toggle it off if you wish to preserve metered data on a specific connection.
 
 ### 2. Start a Download
+
 - **Paste URL**: Copy any direct HTTP/HTTPS download link or BitTorrent Magnet link.
 - In UnCapped, press `Ctrl+V` (or `Cmd+V` on macOS), or click the URL input field and paste the link.
 - Choose your preferred save directory (UnCapped remembers your last chosen folder automatically).
 - Click **Start Download**.
 
 ### 3. Track Transfers in Real Time
+
 - **Dynamic Chunk Grid**: Watch UnCapped slice the file into atomic chunks and pull them simultaneously across your networks. Each chunk square is color-coded to the exact network interface that downloaded it.
 - **Active Streams**: See real-time transfer speeds and chunk leasing across all bonded networks.
 - **In-Progress Library View**: Click the **Downloads** button at any time to inspect your active queue. The list view defaults to in-progress downloads, allowing you to pause or resume transfers directly from each table row.
 
 ### 4. Pausing, Resuming & Clean Cancellation
+
 - **Safe Pause & Resume**: Pause a download at any point. When resumed, UnCapped verifies server cache validators (`ETag` and `Last-Modified`) to ensure data integrity and picks up exactly where it left off without redownloading finished parts.
 - **Cancel with Disk Purge**: If you cancel a download, a dialog allows you to delete all partially downloaded chunk files immediately from disk, keeping your storage clean.
 
 ### 5. Browser Extension Integration
+
 - UnCapped includes a lightweight Chromium browser extension located in the `extension/` folder.
 - Load it into Chrome, Edge, or Brave via `chrome://extensions` (Developer Mode → Load Unpacked) to automatically intercept browser downloads and send them directly into UnCapped for multi-network acceleration.
 
@@ -396,7 +403,6 @@ UnCapped includes an automated GitHub Actions release pipeline (`.github/workflo
 4. **Instant In-App User Notification**:
    All active UnCapped installations check GitHub Releases on startup. When your new tag is published, their in-app update banner will pop up immediately, allowing them to download the update in one click!
 
-
 ---
 
 # Using a USB-tethered Android phone
@@ -462,9 +468,9 @@ UnCapped is built with:
 UnCapped is open-source software released under the **[MIT License](LICENSE)**.
 
 ### Summary of Rights & Guidelines
+
 - **Free for Personal & Commercial Use:** You are free to download, use, modify, distribute, and integrate UnCapped into private, academic, or commercial projects at no cost.
 - **Attribution:** Any redistribution of the source code or binary distributions must include the original copyright notice and MIT license.
 - **Responsible Use:** Please ensure you only download content you have legal authorization to access. Because UnCapped bonds multiple network adapters (e.g. mobile tethering + Wi-Fi), monitor your cellular data allowances to avoid unexpected carrier charges.
 
 For full legal terms, guidelines, and FAQ, please see the **[LICENSE](LICENSE)** file.
-

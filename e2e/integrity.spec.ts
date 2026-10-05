@@ -96,7 +96,7 @@ test.describe('a connection stuck at a crawl @smoke', () => {
     // Two fast blocks set the reference; every request for the third crawls.
     origin.setRule(({ range }) => (range && range.start >= 2 * BLOCK ? { crawl: 8192 } : 'ok'))
 
-    await plexo.start(origin.url(), origin.sha256, { connections: 1 })
+    await plexo.start(origin.url(), origin.sha256, { connections: 1, networks: ['a'] })
     await plexo.waitForStatus('completed', 30_000)
     const lastBlock = origin.chunkRequests().filter((entry) => entry.range!.start >= 2 * BLOCK)
     expect(lastBlock).toHaveLength(3)
@@ -201,7 +201,7 @@ test.describe('the file changes on the server mid-download @smoke', () => {
         lastModified: change.lastModified ? 'Wed, 01 Jan 2025 00:00:00 GMT' : null
       })
       const reached = origin.hold(3 * BLOCK + 100)
-      await plexo.start(origin.url(), origin.sha256, { connections: 2 })
+      await plexo.start(origin.url(), origin.sha256, { connections: 2, networks: ['a'] })
       await reached
       mutate({ origin, ...change })
       origin.release()

@@ -80,8 +80,19 @@ export class PlexoApp {
   async launch(extraEnv: Record<string, string> = {}): Promise<this> {
     Object.assign(this.extraEnv, extraEnv)
     this.electronApp = await electron.launch({
-      args: [PROJECT_ROOT, ...(process.platform === 'linux' ? ['--no-sandbox'] : [])],
+      args: [
+        PROJECT_ROOT,
+        ...(process.platform === 'linux'
+          ? [
+              '--no-sandbox',
+              '--disable-gpu',
+              '--disable-dev-shm-usage',
+              '--disable-software-rasterizer'
+            ]
+          : [])
+      ],
       env: {
+        ...(process.platform === 'linux' ? { DBUS_SESSION_BUS_ADDRESS: '/dev/null' } : {}),
         ...(process.env as Record<string, string>),
         UNCAPPED_USER_DATA: this.dirs.userData,
         PLEXO_USER_DATA: this.dirs.userData,

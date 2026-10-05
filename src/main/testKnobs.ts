@@ -6,7 +6,7 @@ import type { NetworkInterfaceInfo } from '../shared/types'
 const env: NodeJS.ProcessEnv = app.isPackaged ? {} : process.env
 
 function getEnv(suffix: string): string | undefined {
-  return env[`UNCAPPED_${suffix}`] || env[`PLEXO_${suffix}`]
+  return env[`UNCAPPED_${suffix}`] ?? env[`PLEXO_${suffix}`]
 }
 
 function positiveNumber(suffix: string, fallback: number): number {
@@ -35,7 +35,7 @@ export const testKnobs = {
  * rewriting process.env in the main process. */
 export function testInterfaces(): NetworkInterfaceInfo[] | null {
   if (app.isPackaged) return null
-  const raw = process.env['UNCAPPED_E2E_INTERFACES'] || process.env['PLEXO_E2E_INTERFACES']
+  const raw = process.env['UNCAPPED_E2E_INTERFACES'] ?? process.env['PLEXO_E2E_INTERFACES']
   if (raw === undefined) return null
   return raw
     .split(',')

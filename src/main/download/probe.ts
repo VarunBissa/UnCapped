@@ -288,16 +288,18 @@ export async function resolveMagnetMetadata(
 export async function probeUrl(rawUrl: string): Promise<ProbeResult> {
   if (isMagnetUrl(rawUrl)) {
     const syncResult = parseMagnetUrl(rawUrl)
-    try {
-      const meta = await resolveMagnetMetadata(rawUrl, 4000)
-      if (meta) {
-        if (meta.name) syncResult.suggestedFileName = meta.name
-        if (typeof meta.length === 'number' && meta.length > 0) {
-          syncResult.totalBytes = meta.length
+    if (!testKnobs.userDataDir && !process.env.CI) {
+      try {
+        const meta = await resolveMagnetMetadata(rawUrl, 4000)
+        if (meta) {
+          if (meta.name) syncResult.suggestedFileName = meta.name
+          if (typeof meta.length === 'number' && meta.length > 0) {
+            syncResult.totalBytes = meta.length
+          }
         }
+      } catch {
+        // Fall back to parsed magnet URL parameters if metadata resolution times out
       }
-    } catch {
-      // Fall back to parsed magnet URL parameters if metadata resolution times out
     }
     return syncResult
   }

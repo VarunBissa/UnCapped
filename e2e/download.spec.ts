@@ -22,7 +22,7 @@ test.describe('happy paths @smoke', () => {
   for (const connections of [1, 8]) {
     test(`${connections} connection(s) per network`, async ({ plexo, serve }) => {
       const origin = await serve({ size: 20 * BLOCK + 123 })
-      await plexo.start(origin.url(), origin.sha256, { connections })
+      await plexo.start(origin.url(), origin.sha256, { connections, networks: ['a'] })
       const state = await plexo.waitForStatus('completed')
       expect(state.chunks).toHaveLength(connections)
     })

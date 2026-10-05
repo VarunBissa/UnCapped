@@ -346,6 +346,7 @@ The main process runs an HTTP server bound strictly to the local loopback addres
   - `GET /health`: Returns `{ status: 'ok', app: 'UnCapped', version: '...' }`.
   - `POST /download`: Accepts JSON payloads containing `{ url, cookies, referrer, suggestedFileName }`.
 - **Security Controls**:
+
 ### 6.3 Extension Installation & Setup
 
 1. **Download Release Package**: Download `uncapped-chrome-extension.zip` from [Releases](https://github.com/VarunBissa/UnCapped/releases) and extract it.
@@ -650,4 +651,3 @@ UnCapped stands on the shoulders of this open-source engineering achievement and
 UnCapped is open-source software licensed under the **[MIT License](LICENSE)**.
 
 It is free for personal, educational, and commercial use. Users are encouraged to inspect, customize, and redistribute the application under the terms of the MIT License. A complete Plain-English Usage Guide, Acceptable Use Policy, and FAQ can be found in the [LICENSE](LICENSE) file.
-
