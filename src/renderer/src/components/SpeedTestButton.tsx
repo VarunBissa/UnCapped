@@ -49,7 +49,7 @@ const SPEED_OPTIONS: SpeedOption[] = [
       'https://speedtest.frankfurt.linode.com/100MB-frankfurt.bin',
       'https://proof.ovh.net/files/100Mb.dat'
     ],
-    description: 'Standard (Recommended)'
+    description: 'Quick check — too short to max out fast bonds'
   },
   {
     id: '1gb',
@@ -62,13 +62,15 @@ const SPEED_OPTIONS: SpeedOption[] = [
       'https://speedtest.frankfurt.linode.com/1GB-frankfurt.bin',
       'https://proof.ovh.net/files/1Gb.dat'
     ],
-    description: 'Bonded stress test'
+    description: 'Bonded test (Recommended)'
   }
 ]
 
+const SPEED_TEST_STREAMS_PER_NETWORK = 6
+
 export function SpeedTestButton(): React.JSX.Element {
   const [open, setOpen] = useState(false)
-  const [selectedSize, setSelectedSize] = useState<SpeedOption>(SPEED_OPTIONS[1])
+  const [selectedSize, setSelectedSize] = useState<SpeedOption>(SPEED_OPTIONS[2])
   const [deselectedIds, setDeselectedIds] = useState<string[]>([])
   const [testing, setTesting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -162,8 +164,10 @@ export function SpeedTestButton(): React.JSX.Element {
         ),
         supportsRanges: probe.supportsRanges,
         interfaceIds: selectedIds,
-        chunkCount: selectedIds.length * 2,
-        connectionsPerNetwork: 2,
+        // One TCP stream can't fill a fast high-latency link (a tethered phone especially);
+        // the download also adds streams on its own where they keep helping.
+        chunkCount: selectedIds.length * SPEED_TEST_STREAMS_PER_NETWORK,
+        connectionsPerNetwork: SPEED_TEST_STREAMS_PER_NETWORK,
         etag: probe.etag,
         lastModified: probe.lastModified
       })

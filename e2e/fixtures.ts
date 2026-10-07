@@ -75,9 +75,22 @@ export class PlexoApp {
   constructor(
     readonly dirs: { userData: string; dest: string },
     private extraEnv: Record<string, string> = {}
-  ) {}
+  ) {
+    this.normalizeEnv(this.extraEnv)
+  }
+
+  private normalizeEnv(target: Record<string, string>): void {
+    for (const [k, v] of Object.entries({ ...target })) {
+      if (k.startsWith('PLEXO_')) {
+        target['UNCAPPED_' + k.slice(6)] = v
+      } else if (k.startsWith('UNCAPPED_')) {
+        target['PLEXO_' + k.slice(9)] = v
+      }
+    }
+  }
 
   async launch(extraEnv: Record<string, string> = {}): Promise<this> {
+    this.normalizeEnv(extraEnv)
     Object.assign(this.extraEnv, extraEnv)
     this.electronApp = await electron.launch({
       args: [

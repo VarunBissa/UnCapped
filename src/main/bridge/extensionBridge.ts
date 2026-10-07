@@ -170,9 +170,9 @@ export function startExtensionBridge(
           chunkCount: isTorrent
             ? Math.max(2, interfaces.length * 2)
             : supportsRanges
-              ? Math.max(2, interfaces.length * 2)
+              ? Math.max(4, interfaces.length * 4)
               : 1,
-          connectionsPerNetwork: 2,
+          connectionsPerNetwork: isTorrent ? 2 : 4,
           etag,
           lastModified
         })

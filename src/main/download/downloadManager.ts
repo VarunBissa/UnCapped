@@ -71,7 +71,7 @@ import type {
   StartDownloadRequest,
   StartSimulatedDownloadRequest
 } from '../../shared/types'
-import { interleave, planDownload } from '../../shared/plan'
+import { interleave, MAX_STREAMS, MAX_STREAMS_PER_NETWORK, planDownload } from '../../shared/plan'
 import { testKnobs } from '../testKnobs'
 import { loadNetworkPreferences } from '../network/preferences'
 import { isMagnetUrl, isTorrentFile } from './probe'
@@ -158,6 +158,10 @@ type AttemptOutcome =
 interface ChunkRuntime {
   /** Aborts the whole stream: pause and cancel. */
   controller: AbortController
+  /** The network this stream belongs to. A quarantine or a disconnect only lends the stream to
+   * another network; it comes back here as soon as this one is usable again. Only deliberate
+   * reassignments (Latency Shield) change it. */
+  homeInterfaceId: string
   /** What the stream is fetching right now, if anything. */
   attempt: Attempt | null
   /** When this connection last (re)connected; it isn't judged until SLOW_WARMUP_MS after. */
@@ -216,6 +220,19 @@ interface DownloadRuntime {
   consecutiveFailuresByInterface?: Map<string, number>
   /** Timestamp until which an interface is quarantined and bypassed for new blocks. */
   quarantinedInterfaces?: Map<string, number>
+  /** Adaptive stream growth bookkeeping per interface id (see maybeGrowStreams). */
+  streamGrowth?: Map<string, StreamGrowth>
+  /** Last time the per-network debug summary was logged. */
+  lastNetworkSummaryAt?: number
+}
+
+interface StreamGrowth {
+  /** When a stream was last added to this network (or when it was first observed). */
+  lastChangeAt: number
+  /** The network's aggregate speed just before the last stream was added; 0 before any. */
+  speedBeforeAdd: number
+  /** Adding a stream stopped paying off: leave this network alone for the rest of the run. */
+  saturated: boolean
 }
 
 interface PersistedDownload {
@@ -228,10 +245,11 @@ interface PersistedDownload {
 
 // Set UNCAPPED_DEBUG=1 to log every request's outcome, how long the server took to answer and
 // whether it reused a warm connection — what it takes to tell one slow connection from a slow path.
-const debug: (...args: unknown[]) => void =
-  process.env['UNCAPPED_DEBUG'] || process.env['PLEXO_DEBUG']
-    ? (...args) => console.debug('[uncapped]', ...args)
-    : () => {}
+const debugEnabled = Boolean(process.env['UNCAPPED_DEBUG'] || process.env['PLEXO_DEBUG'])
+const debug: (...args: unknown[]) => void = debugEnabled
+  ? (...args) => console.debug('[uncapped]', ...args)
+  : () => {}
+const NETWORK_SUMMARY_INTERVAL_MS = 5_000
 
 function isSpeedTestFileName(name?: string): boolean {
   return Boolean(
@@ -240,6 +258,17 @@ function isSpeedTestFileName(name?: string): boolean {
 }
 
 const PROGRESS_THROTTLE_MS = 200
+// The manifest is a full clone + JSON of every block; at hundreds of Mbps doing that 5x a second
+// competes with socket reads on the main thread. Pause/resume/state changes still save at once.
+const PERSIST_THROTTLE_MS = 1_000
+
+// Adaptive stream growth: one TCP stream on a high-latency link (cellular tethering especially)
+// can't fill it, so a network whose streams are all busy gets another one every
+// GROW_INTERVAL_MS for as long as the last one added made it at least GROW_MIN_GAIN faster.
+const GROW_INTERVAL_MS = 4_000
+const GROW_MIN_GAIN = 1.1
+/** Below this a download is over before a new stream could ramp up. */
+const GROW_MIN_FILE_BYTES = 64 * 1024 * 1024
 
 // Raw per-event deltas are too noisy to display (socket buffers flush in
 // irregular bursts a few ms apart). Averaging over a few seconds instead
@@ -442,6 +471,8 @@ export class DownloadManager {
             chunk.interfaceId = iface.id
             chunk.interfaceLabel = iface.displayName
             chunk.interfaceKind = iface.kind
+            const self = runtime.chunkRuntimes.get(chunk.id)
+            if (self) self.homeInterfaceId = iface.id
           })
         }
       } else {
@@ -475,6 +506,7 @@ export class DownloadManager {
                 chunk.interfaceKind = fallback.kind
 
                 const self = runtime.chunkRuntimes.get(chunk.id)
+                if (self) self.homeInterfaceId = fallback.id
                 if (self?.attempt) {
                   this.abortAttempt(self.attempt, 'refresh')
                 }
@@ -770,10 +802,19 @@ export class DownloadManager {
     }
 
     const isSpeedTest = isSpeedTestFileName(requestPayload.suggestedFileName)
+    // A speed test wants every stream pulling until the very end: a few huge blocks would leave
+    // most streams idle while the last ones finish, and read as a slower bond than it is.
+    const plannedStreams =
+      interfaces.length *
+      Math.max(
+        1,
+        requestPayload.connectionsPerNetwork ??
+          Math.round(requestPayload.chunkCount / interfaces.length)
+      )
     const maxBlockBytes = isSpeedTest
       ? Math.max(
-          16 * 1024 * 1024,
-          Math.min(64 * 1024 * 1024, Math.ceil(requestPayload.totalBytes / 16))
+          4 * 1024 * 1024,
+          Math.min(16 * 1024 * 1024, Math.ceil(requestPayload.totalBytes / (plannedStreams * 4)))
         )
       : testKnobs.blockBytes
 
@@ -1414,6 +1455,25 @@ export class DownloadManager {
           if (!runtime.requestPayload.interfaceIds.includes(iface.id)) {
             runtime.requestPayload.interfaceIds.push(iface.id)
           }
+          runtime.streamGrowth?.delete(iface.id)
+
+          // A network that dropped out briefly still has its own streams, lent to the others in
+          // the meantime: they come back by themselves (see runWorker), so new ones would double
+          // it up.
+          const returningStreams =
+            runtime.state.status === 'downloading'
+              ? runtime.state.chunks.filter(
+                  (c) =>
+                    runtime.chunkRuntimes.get(c.id)?.homeInterfaceId === iface.id &&
+                    c.status !== 'completed' &&
+                    c.status !== 'error' &&
+                    c.status !== 'cancelled'
+                ).length
+              : 0
+          if (returningStreams > 0) {
+            stateChanged = true
+            continue
+          }
 
           const existingChunkCounts = runtime.activeInterfaces
             .map((ai) => runtime.state.chunks.filter((c) => c.interfaceId === ai.id).length)
@@ -1879,6 +1939,8 @@ export class DownloadManager {
         this.scheduleUpdate(runtime)
       }
       this.refreshStuckConnections(runtime, now)
+      this.maybeGrowStreams(runtime, now)
+      if (debugEnabled) this.logNetworkSummary(runtime, now)
     }, 500)
     speedTicker.unref()
 
@@ -1915,6 +1977,7 @@ export class DownloadManager {
     runtime.state.status = 'assembling'
     runtime.state.assembledBytes = 0
     runtime.state.speedBytesPerSec = 0
+    await this.persistNow(runtime)
     this.pushUpdate(runtime)
 
     try {
@@ -1946,6 +2009,94 @@ export class DownloadManager {
     this.pushUpdate(runtime)
     await this.cleanupTempDir(runtime)
     await this.discardUnfinishedDestination(runtime)
+  }
+
+  /**
+   * Adds a stream to a network whose streams are all busy, as long as each one added so far made
+   * that network meaningfully faster — the way TCP probes for bandwidth. A fast high-latency link
+   * (a tethered phone) ends up with more streams than a slow one, instead of an equal split.
+   */
+  private maybeGrowStreams(runtime: DownloadRuntime, now: number): void {
+    if (!runtime.addWorker || !runtime.requestPayload.supportsRanges) return
+    if (isSimulatedUrl(runtime.requestPayload.url)) return
+    if (runtime.state.totalBytes > 0 && runtime.state.totalBytes < GROW_MIN_FILE_BYTES) return
+    if (runtime.state.chunks.length >= MAX_STREAMS) return
+    // Only while there's still unclaimed work for a new stream to take.
+    if (!runtime.blocks.some((block) => block.status === 'pending')) return
+
+    runtime.streamGrowth ??= new Map()
+    for (const iface of runtime.activeInterfaces) {
+      if (runtime.state.chunks.length >= MAX_STREAMS) break
+      if (runtime.state.latencyShieldEnabled && runtime.state.shieldedInterfaceId === iface.id)
+        continue
+      if ((runtime.quarantinedInterfaces?.get(iface.id) ?? 0) > now) continue
+      // A capped network is held back on purpose; more streams would only split the same cap.
+      const pref = runtime.interfacePreferences?.get(iface.id)
+      if (pref?.speedLimitMode === 'capped' && pref.maxSpeedBytesPerSec) continue
+
+      const streams = runtime.state.chunks.filter(
+        (c) =>
+          c.interfaceId === iface.id &&
+          !c.quotaReached &&
+          c.status !== 'completed' &&
+          c.status !== 'error' &&
+          c.status !== 'cancelled'
+      )
+      if (streams.length === 0 || streams.length >= MAX_STREAMS_PER_NETWORK) continue
+
+      let growth = runtime.streamGrowth.get(iface.id)
+      if (!growth) {
+        growth = { lastChangeAt: now, speedBeforeAdd: 0, saturated: false }
+        runtime.streamGrowth.set(iface.id, growth)
+        continue
+      }
+      if (growth.saturated || now - growth.lastChangeAt < GROW_INTERVAL_MS) continue
+      // Every stream busy: one waiting for work means the network isn't short of streams.
+      if (!streams.every((c) => c.status === 'downloading')) continue
+
+      const speed = streams.reduce((sum, c) => sum + c.speedBytesPerSec, 0)
+      if (speed <= 0) continue
+      if (growth.speedBeforeAdd > 0 && speed < growth.speedBeforeAdd * GROW_MIN_GAIN) {
+        growth.saturated = true
+        debug('streams saturated', { network: iface.displayName, streams: streams.length })
+        continue
+      }
+
+      const nextId = Math.max(-1, ...runtime.state.chunks.map((c) => c.id)) + 1
+      const chunk: ChunkState = {
+        id: nextId,
+        interfaceId: iface.id,
+        interfaceLabel: iface.displayName,
+        interfaceKind: iface.kind,
+        rangeStart: 0,
+        rangeEnd: null,
+        bytesDownloaded: 0,
+        speedBytesPerSec: 0,
+        status: 'pending',
+        retryCount: 0
+      }
+      runtime.state.chunks.push(chunk)
+      growth.lastChangeAt = now
+      growth.speedBeforeAdd = speed
+      debug('stream added', { network: iface.displayName, streams: streams.length + 1, speed })
+      runtime.addWorker(chunk)
+      this.scheduleUpdate(runtime)
+    }
+  }
+
+  /** UNCAPPED_DEBUG only: what each network is carrying, to tell which one is underperforming. */
+  private logNetworkSummary(runtime: DownloadRuntime, now: number): void {
+    if (now - (runtime.lastNetworkSummaryAt ?? 0) < NETWORK_SUMMARY_INTERVAL_MS) return
+    runtime.lastNetworkSummaryAt = now
+    const summary: Record<string, { streams: number; busy: number; mbps: number }> = {}
+    for (const chunk of runtime.state.chunks) {
+      const entry = (summary[chunk.interfaceLabel] ??= { streams: 0, busy: 0, mbps: 0 })
+      entry.streams += 1
+      if (chunk.status === 'downloading') entry.busy += 1
+      entry.mbps += (chunk.speedBytesPerSec * 8) / 1e6
+    }
+    for (const entry of Object.values(summary)) entry.mbps = Math.round(entry.mbps)
+    debug('networks', summary)
   }
 
   /**
@@ -2268,7 +2419,8 @@ export class DownloadManager {
     // callers of recomputeAggregates are rare enough to afford the full pass, and each one
     // re-derives the true total, so any drift here cannot accumulate.
     runtime.state.bytesDownloaded += gained
-    runtime.state.speedBytesPerSec = sumChunkSpeeds(runtime)
+    // The total speed is re-summed when the update is pushed (scheduleUpdate) and by the 500 ms
+    // ticker — not here, on every socket read of every stream.
     this.scheduleUpdate(runtime)
   }
 
@@ -2590,6 +2742,7 @@ export class DownloadManager {
     const controller = new AbortController()
     const self: ChunkRuntime = {
       controller,
+      homeInterfaceId: chunk.interfaceId,
       attempt: null,
       warmSince: Date.now(),
       slowSince: null,
@@ -2602,8 +2755,11 @@ export class DownloadManager {
     while (runtime.state.status === 'downloading') {
       if (controller.signal.aborted) break
 
-      // Dynamically resolve current interface for hot-unplug / hot-replug fault recovery
+      // Dynamically resolve current interface for hot-unplug / hot-replug fault recovery. The
+      // stream's own network comes first, so one lent out during a quarantine or a disconnect
+      // returns home as soon as it is usable again.
       let currentIface =
+        runtime.activeInterfaces.find((i) => i.id === self.homeInterfaceId) ??
         runtime.activeInterfaces.find((i) => i.id === chunk.interfaceId) ??
         runtime.activeInterfaces[chunk.id % runtime.activeInterfaces.length] ??
         runtime.activeInterfaces[0]
@@ -2648,6 +2804,9 @@ export class DownloadManager {
           chunk.interfaceId = fallback.id
           chunk.interfaceLabel = fallback.displayName
           chunk.interfaceKind = fallback.kind
+          // Shielding is deliberate: the stream now belongs to the fallback network.
+          self.homeInterfaceId = fallback.id
+          currentIface = fallback
         } else {
           // Cannot shield if only 1 interface is active - allow download to proceed!
           runtime.state.shieldedInterfaceId = undefined
@@ -2720,6 +2879,16 @@ export class DownloadManager {
         next = await this.finishAttempt(runtime, chunk, self, currentIface, attempt, outcome)
       } finally {
         this.endAttempt(runtime, self, attempt)
+        // A borrowed network is only borrowed for one attempt: show (and persist) the stream
+        // under its own network again, so a pause mid-borrow doesn't make the loan permanent.
+        if (currentIface.id !== self.homeInterfaceId) {
+          const home = runtime.activeInterfaces.find((i) => i.id === self.homeInterfaceId)
+          if (home) {
+            chunk.interfaceId = home.id
+            chunk.interfaceLabel = home.displayName
+            chunk.interfaceKind = home.kind
+          }
+        }
       }
       if (next === 'stop') break
     }
@@ -2797,6 +2966,9 @@ export class DownloadManager {
     runtime.pushScheduled = true
     setTimeout(() => {
       runtime.pushScheduled = false
+      if (runtime.state.status === 'downloading') {
+        runtime.state.speedBytesPerSec = sumChunkSpeeds(runtime)
+      }
       this.pushUpdate(runtime)
     }, PROGRESS_THROTTLE_MS)
   }
@@ -2832,7 +3004,22 @@ export class DownloadManager {
       )
     }
 
-    const ASSEMBLE_STREAM_BUFFER_BYTES = 1024 * 1024 // 1 MB buffer for fast sequential disk assembly
+    // Parallel pre-check across libuv threadpool instead of 70+ serialized disk stats
+    const partSizes = await Promise.all(
+      runtime.blocks.map(async (block) => {
+        const partPath = partFile(runtime.tempDir, block.index)
+        const expectedBytes = block.rangeEnd === null ? null : block.rangeEnd - block.rangeStart + 1
+        const actualBytes = (await stat(partPath)).size
+        if (expectedBytes !== null && actualBytes !== expectedBytes) {
+          throw new Error(
+            `Part ${block.index} is ${actualBytes} bytes but should be ${expectedBytes} — refusing to write a corrupt file`
+          )
+        }
+        return actualBytes
+      })
+    )
+
+    const ASSEMBLE_STREAM_BUFFER_BYTES = 4 * 1024 * 1024 // 4 MB buffer for high-speed sequential assembly
     const output = createWriteStream(runtime.state.destinationPath, {
       highWaterMark: ASSEMBLE_STREAM_BUFFER_BYTES
     })
@@ -2846,7 +3033,7 @@ export class DownloadManager {
     // A single pipeline for the whole file, not one per part: pipeline leaves its listeners on
     // a destination it doesn't end, so one per part would pile up on the output — five per part.
     const source = Readable.from(
-      this.readParts(runtime, ASSEMBLE_STREAM_BUFFER_BYTES, (partBytes) => {
+      this.readParts(runtime, ASSEMBLE_STREAM_BUFFER_BYTES, partSizes, (partBytes) => {
         bytesWritten += partBytes
         // Reported per part rather than per underlying write so the assembling visualization
         // advances in the same units the block grid already shows — one step per chunk, not a
@@ -2876,11 +3063,11 @@ export class DownloadManager {
     }
   }
 
-  /** The download's bytes in file order: each part checked against the size its range says, then
-   * read through. `onPartRead` is told how many bytes each part held, once it has been read. */
+  /** The download's bytes in file order, streamed through high-capacity buffers without redundant disk stats. */
   private async *readParts(
     runtime: DownloadRuntime,
     bufferBytes: number,
+    partSizes: number[],
     onPartRead: (partBytes: number) => void
   ): AsyncGenerator<Buffer> {
     // Set only for a dev-tool simulated download that asked for a slowed-down assemble — real
@@ -2890,22 +3077,14 @@ export class DownloadManager {
 
     for (let i = 0; i < runtime.totalBlocks; i++) {
       const partPath = partFile(runtime.tempDir, i)
-      const block = runtime.blocks[i]
-      const expectedBytes = block.rangeEnd === null ? null : block.rangeEnd - block.rangeStart + 1
-      const actualBytes = (await stat(partPath)).size
-
-      if (expectedBytes !== null && actualBytes !== expectedBytes) {
-        throw new Error(
-          `Part ${i} is ${actualBytes} bytes but should be ${expectedBytes} — refusing to write a corrupt file`
-        )
-      }
+      const expectedBytes = partSizes[i]
 
       let read = 0
       for await (const chunk of createReadStream(partPath, { highWaterMark: bufferBytes })) {
         read += (chunk as Buffer).length
         yield chunk as Buffer
       }
-      if (read !== actualBytes) {
+      if (read !== expectedBytes) {
         throw new Error(
           `Part ${i} changed while it was being assembled — refusing to write a corrupt file`
         )
@@ -2947,7 +3126,7 @@ export class DownloadManager {
     runtime.persistenceTimer = setTimeout(() => {
       runtime.persistenceTimer = undefined
       void this.persistNow(runtime)
-    }, PROGRESS_THROTTLE_MS)
+    }, PERSIST_THROTTLE_MS)
   }
 
   private persistNow(runtime: DownloadRuntime): Promise<void> {

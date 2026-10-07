@@ -96,6 +96,9 @@ const CONNECT_TIMEOUT_MS = Math.min(testKnobs.stallTimeoutMs, 6_000)
 // able to follow it too instead of failing outright.
 const MAX_REDIRECTS = 5
 
+/** Part-file write buffer (see the createWriteStream call in downloadChunk). */
+const WRITE_BUFFER_BYTES = 1024 * 1024
+
 interface ServedRange {
   start: number
   end: number
@@ -336,8 +339,12 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
 
           onResponse?.({ ttfbMs: Date.now() - sentAt, reusedSocket: req.reusedSocket })
 
+          // A 1 MB buffer: with the 16 KB default nearly every 64 KB socket read overflows it and
+          // pauses the response until the disk catches up, which stops reading the socket and
+          // shrinks the TCP window — costly on a high-latency link such as a tethered phone.
           const fileStream: WriteStream = createWriteStream(destinationPath, {
-            flags: append ? 'a' : 'w'
+            flags: append ? 'a' : 'w',
+            highWaterMark: WRITE_BUFFER_BYTES
           })
           currentFileStream = fileStream
 

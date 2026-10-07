@@ -9,17 +9,30 @@ import type {
 import { getAgentsForInterface } from '../download/chunkDownloader'
 import { routeFrom } from './deviceBinding'
 
-const SAMPLE_DURATION_MS = 2500
+// Long enough to get past TCP slow-start and measure what the link really sustains; the first
+// WARMUP_MS of every connection is left out of the average for the same reason.
+const SAMPLE_DURATION_MS = 5000
+const WARMUP_MS = 1000
+// One TCP connection can't fill a fast, high-latency link (a tethered phone especially), and
+// that's not what a download uses either — so each interface is sampled over several.
+const CONNECTIONS_PER_INTERFACE = 4
+// Each connection reads its own part of the file, so none of them run out of bytes early. Small
+// enough to stay inside the 100 MB test files.
+const CONNECTION_OFFSET_BYTES = 16 * 1024 * 1024
 const MAX_REDIRECTS = 5
 
-function sampleInterfaceThroughput(
+/** Bytes/sec one connection sustained after its warmup (or overall, if it ended sooner). */
+function sampleConnectionThroughput(
   url: string,
   iface: NetworkInterfaceInfo,
-  durationMs = SAMPLE_DURATION_MS
+  durationMs: number,
+  rangeStart: number
 ): Promise<number> {
   return new Promise<number>((resolve) => {
     let bytesReceived = 0
     let startTime = 0
+    let warmBytes: number | null = null
+    let warmTime = 0
     let finished = false
     let currentReq: ClientRequest | null = null
     let currentRes: IncomingMessage | null = null
@@ -34,7 +47,12 @@ function sampleInterfaceThroughput(
       if (currentRes && !currentRes.destroyed) {
         currentRes.destroy()
       }
-      const elapsedSec = (Date.now() - (startTime || Date.now())) / 1000
+      const now = Date.now()
+      if (warmBytes !== null && now - warmTime >= 250) {
+        resolve(Math.round((bytesReceived - warmBytes) / ((now - warmTime) / 1000)))
+        return
+      }
+      const elapsedSec = (now - (startTime || now)) / 1000
       if (elapsedSec <= 0.1 || bytesReceived === 0) {
         resolve(0)
       } else {
@@ -44,9 +62,9 @@ function sampleInterfaceThroughput(
 
     const timer = setTimeout(() => {
       finish()
-    }, durationMs + 1500)
+    }, durationMs + 3000)
 
-    const attempt = (targetUrl: URL, redirectsLeft: number): void => {
+    const attempt = (targetUrl: URL, redirectsLeft: number, offset: number): void => {
       try {
         const isHttps = targetUrl.protocol === 'https:'
         const requester = isHttps ? httpsRequest : httpRequest
@@ -64,8 +82,8 @@ function sampleInterfaceThroughput(
             ...(route.createConnection ? {} : { agent }),
             headers: {
               'User-Agent': 'UnCapped-Benchmark/1.0',
-              // 50 MB sampling window so high-speed connections don't exhaust the range early
-              Range: 'bytes=0-52428799'
+              // Open-ended from this connection's own offset; it's cut off after durationMs
+              Range: `bytes=${offset}-`
             }
           },
           (res) => {
@@ -81,14 +99,27 @@ function sampleInterfaceThroughput(
             ) {
               const nextUrl = new URL(res.headers.location, targetUrl)
               req.destroy()
-              attempt(nextUrl, redirectsLeft - 1)
+              attempt(nextUrl, redirectsLeft - 1, offset)
+              return
+            }
+
+            // A file smaller than this connection's offset: read it from the start instead.
+            if (res.statusCode === 416 && offset > 0) {
+              res.resume()
+              req.destroy()
+              attempt(targetUrl, redirectsLeft, 0)
               return
             }
 
             startTime = Date.now()
             res.on('data', (chunk: Buffer) => {
               bytesReceived += chunk.length
-              if (Date.now() - startTime >= durationMs) {
+              const now = Date.now()
+              if (warmBytes === null && now - startTime >= WARMUP_MS) {
+                warmBytes = bytesReceived
+                warmTime = now
+              }
+              if (now - startTime >= durationMs) {
                 finish()
               }
             })
@@ -109,8 +140,22 @@ function sampleInterfaceThroughput(
       }
     }
 
-    attempt(new URL(url), MAX_REDIRECTS)
+    attempt(new URL(url), MAX_REDIRECTS, rangeStart)
   })
+}
+
+/** What one interface sustains over several parallel connections. */
+async function sampleInterfaceThroughput(
+  url: string,
+  iface: NetworkInterfaceInfo,
+  durationMs = SAMPLE_DURATION_MS
+): Promise<number> {
+  const speeds = await Promise.all(
+    Array.from({ length: CONNECTIONS_PER_INTERFACE }, (_, k) =>
+      sampleConnectionThroughput(url, iface, durationMs, k * CONNECTION_OFFSET_BYTES)
+    )
+  )
+  return speeds.reduce((sum, speed) => sum + speed, 0)
 }
 
 export async function runComparisonBenchmark(

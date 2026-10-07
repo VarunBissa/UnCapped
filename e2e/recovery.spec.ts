@@ -1,7 +1,7 @@
 import { cp, readFile, rm, truncate, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { BLOCK, expect, test } from './fixtures'
+import { BLOCK, expect, interfacesEnv, LAN_ADDRESS, NETWORKS, test } from './fixtures'
 import { seededBytes, sha256 } from './origin'
 
 // D. Quitting, crashing and restarting. kill() is SIGKILL: no before-quit, no final save —
@@ -195,5 +195,65 @@ test.describe('persisted state on disk @smoke', () => {
     await plexo.launch()
     await plexo.api.resumeDownload(id)
     await plexo.waitForStatus('completed')
+  })
+})
+
+test.describe('quarantine and interface recovery', () => {
+  test('quarantined interface recovers and receives traffic again once healthy', async ({
+    plexo,
+    serve
+  }) => {
+    test.skip(!LAN_ADDRESS, 'needs a LAN address to act as the second network')
+    const origin = await serve({ size: 40 * BLOCK })
+    // Fail the first 2 requests from LAN_ADDRESS (interface b), causing interface b to be quarantined
+    let bFails = 0
+    origin.setRule((req) => {
+      if (req.from === LAN_ADDRESS && bFails < 2) {
+        bFails++
+        return 'stallHeaders'
+      }
+      return 'ok'
+    })
+
+    await plexo.start(origin.url(), origin.sha256, { networks: ['a', 'b'], connections: 2 })
+    const state = await plexo.waitForStatus('completed')
+    expect(bFails).toBe(2)
+    // Confirm network b still ended up contributing bytes to the download after recovery
+    const bBytes = (state.blocks ?? []).reduce(
+      (sum, block) => sum + (block.bytesByInterface['b'] ?? 0),
+      0
+    )
+    expect(bBytes).toBeGreaterThan(0)
+  })
+
+  test('reconnected network does not duplicate streams when home streams exist', async ({
+    plexo,
+    serve
+  }) => {
+    test.skip(!LAN_ADDRESS, 'needs a LAN address to act as the second network')
+    const origin = await serve({ size: 40 * BLOCK })
+    const reached = origin.hold(10 * BLOCK)
+    await plexo.start(origin.url(), origin.sha256, {
+      networks: ['a', 'b'],
+      connections: 2
+    })
+    await reached
+
+    const setInterfaces = (value: string): Promise<void> =>
+      plexo.evaluateMain((_electron, v) => {
+        process.env['UNCAPPED_E2E_INTERFACES'] = v
+        process.env['PLEXO_E2E_INTERFACES'] = v
+      }, value)
+
+    // Simulate network b disconnecting
+    await setInterfaces(interfacesEnv({ a: '127.0.0.1' }))
+    origin.release()
+
+    // Restore network b
+    await setInterfaces(interfacesEnv(NETWORKS))
+    const done = await plexo.waitForStatus('completed')
+    // Ensure chunks for network b did not duplicate beyond the original 2 streams per network
+    const bChunks = done.chunks.filter((c) => c.interfaceId === 'b')
+    expect(bChunks.length).toBeLessThanOrEqual(2)
   })
 })
