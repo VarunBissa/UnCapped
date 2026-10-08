@@ -40,7 +40,7 @@ export function TitleBar({
 
   return (
     <div
-      className={`flex h-11 shrink-0 items-center gap-[13px] border-b-[0.5px] border-border bg-card pr-3.5 [-webkit-app-region:drag] ${
+      className={`flex h-11 shrink-0 items-center gap-2 sm:gap-[13px] border-b-[0.5px] border-border bg-card pr-3.5 [-webkit-app-region:drag] ${
         // Real traffic lights are inset here on macOS (see main/index.ts, trafficLightPosition) —
         // 16px inset + ~52px cluster width + a clear ~26px gap before our own content starts.
         isMac ? 'pl-[94px]' : 'pl-3.5'
@@ -69,7 +69,7 @@ export function TitleBar({
             ) : (
               <ArrowLeft className="size-3.5" />
             )}
-            <span>{navButton.label}</span>
+            <span className="hidden xs:inline">{navButton.label}</span>
             {navButton.badge != null && (
               <span className="ml-0.5 rounded-full bg-muted-foreground/15 px-1.5 py-0.2 font-mono text-[9.5px] font-semibold text-foreground/80">
                 {navButton.badge}
@@ -83,22 +83,25 @@ export function TitleBar({
             className="flex items-center gap-1.5 rounded-[5px] px-2 py-1 font-mono text-[10.5px] sm:text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors [-webkit-app-region:no-drag] cursor-pointer shrink-0"
           >
             <Download className="size-3.5" />
-            <span>Downloads</span>
+            <span className="hidden xs:inline">Downloads</span>
           </button>
         ) : null}
       </div>
-      <div className="flex-1 min-w-2" />
+      <div className="flex-1 min-w-1" />
       {status.kind === 'combined' && (
         <ColorBadge
           bg="var(--color-wifi-bg)"
           border="var(--color-wifi-border)"
           text="var(--color-wifi-text)"
-          className={pillClass}
+          className={`${pillClass} shrink`}
         >
           <div
             className={`${pillDotClass} bg-[var(--color-wifi)] animate-[uncapped-glow_2s_ease-in-out_infinite]`}
           />
-          {status.networkCount} {status.networkCount === 1 ? 'network' : 'networks'} combined
+          <span>
+            {status.networkCount} {status.networkCount === 1 ? 'net' : 'nets'}
+            <span className="hidden sm:inline"> combined</span>
+          </span>
         </ColorBadge>
       )}
       {status.kind === 'assembling' && (
@@ -106,12 +109,14 @@ export function TitleBar({
           bg="var(--color-ethernet-bg)"
           border="var(--color-ethernet-border)"
           text="var(--color-ethernet-text)"
-          className={pillClass}
+          className={`${pillClass} shrink`}
         >
           <div
             className={`${pillDotClass} bg-[var(--color-ethernet)] animate-[uncapped-glow_1s_ease-in-out_infinite]`}
           />
-          Assembling file…
+          <span>
+            Assembling<span className="hidden sm:inline"> file…</span>
+          </span>
         </ColorBadge>
       )}
       {status.kind === 'paused' && (
@@ -119,10 +124,12 @@ export function TitleBar({
           bg="var(--color-usb-bg)"
           border="var(--color-usb-border)"
           text="var(--color-usb-text)"
-          className={pillClass}
+          className={`${pillClass} shrink`}
         >
           <div className={`${pillDotClass} bg-[var(--color-usb)]`} />
-          {status.networkCount} {status.networkCount === 1 ? 'network' : 'networks'} · Paused
+          <span>
+            {status.networkCount} {status.networkCount === 1 ? 'net' : 'nets'} · Paused
+          </span>
         </ColorBadge>
       )}
       {status.kind === 'offline' && (
@@ -130,7 +137,7 @@ export function TitleBar({
           bg="var(--color-danger-bg)"
           border="var(--color-danger-border)"
           text="var(--color-danger)"
-          className={pillClass}
+          className={`${pillClass} shrink`}
         >
           <div className={`${pillDotClass} bg-[var(--color-danger)]`} />
           Offline

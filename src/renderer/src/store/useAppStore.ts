@@ -5,7 +5,9 @@ import type {
   NetworkPreference,
   NetworkPreferences,
   ThemeSource,
-  UpdateInfo
+  UpdateInfo,
+  UpdateProgress,
+  WhatsNewItem
 } from '@shared/types'
 import { create } from 'zustand'
 import { groupChunksByInterface } from '../utils/format'
@@ -193,6 +195,16 @@ interface AppStore {
   setDraftDestinationDir: (dir: string) => void
   latencyShieldEnabled: boolean
   toggleLatencyShield: () => Promise<void>
+  zoomFactor: number
+  loadZoomFactor: () => Promise<void>
+  setZoomFactor: (factor: number) => Promise<void>
+  appUpdateStatus: 'idle' | 'downloading' | 'ready' | 'error'
+  updateProgress: UpdateProgress | null
+  whatsNew: WhatsNewItem | null
+  startUpdateDownload: () => Promise<void>
+  installUpdateAndRestart: () => void
+  checkWhatsNew: () => Promise<void>
+  dismissWhatsNew: () => void
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -211,6 +223,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   activeView: 'idle',
   latencyShieldEnabled: false,
+  zoomFactor: 1.0,
+  appUpdateStatus: 'idle',
+  updateProgress: null,
+  whatsNew: null,
   toggleLatencyShield: async () => {
     const next = !get().latencyShieldEnabled
     set({ latencyShieldEnabled: next })
@@ -408,6 +424,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
+  loadZoomFactor: async () => {
+    try {
+      const zoomFactor = await window.uncapped.getZoomFactor()
+      set({ zoomFactor })
+    } catch {
+      // Best-effort
+    }
+  },
+
+  setZoomFactor: async (factor: number) => {
+    const clamped = Math.max(0.5, Math.min(2.0, Math.round(factor * 100) / 100))
+    set({ zoomFactor: clamped })
+    try {
+      await window.uncapped.setZoomFactor(clamped)
+    } catch {
+      // Leave optimistic value
+    }
+  },
+
   checkForUpdate: async () => {
     try {
       const availableUpdate = await window.uncapped.checkForUpdate()
@@ -423,6 +458,44 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Keeps the update visible as a quiet titlebar icon rather than clearing it outright.
     set({ availableUpdate: { ...update, dismissed: true } })
     void window.uncapped.dismissUpdate(update.version)
+  },
+
+  startUpdateDownload: async () => {
+    set({
+      appUpdateStatus: 'downloading',
+      updateProgress: { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 }
+    })
+    try {
+      const ok = await window.uncapped.startUpdateDownload()
+      if (!ok) {
+        set({ appUpdateStatus: 'error' })
+      }
+    } catch {
+      set({ appUpdateStatus: 'error' })
+    }
+  },
+
+  installUpdateAndRestart: () => {
+    void window.uncapped.installUpdateAndRestart()
+  },
+
+  checkWhatsNew: async () => {
+    try {
+      const whatsNew = await window.uncapped.getWhatsNew()
+      if (whatsNew) {
+        set({ whatsNew })
+      }
+    } catch {
+      // Best-effort
+    }
+  },
+
+  dismissWhatsNew: () => {
+    const item = get().whatsNew
+    set({ whatsNew: null })
+    if (item?.version) {
+      void window.uncapped.dismissWhatsNew(item.version)
+    }
   },
 
   setCurrentDownload: (download) => {

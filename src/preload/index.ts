@@ -1,7 +1,7 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from 'electron'
 import { IpcChannels } from '../shared/ipc-channels'
 import type { IpcContract } from '../shared/ipc-contract'
-import type { DownloadState, NetworkPreference, ThemeSource } from '../shared/types'
+import { DownloadState, NetworkPreference, ThemeSource, UpdateProgress } from '../shared/types'
 
 /** Typed wrapper around ipcRenderer.invoke — the channel name picks its args/result shape out of
  * IpcContract, so a call here that doesn't match what registerIpcHandlers (main) actually handles
@@ -50,6 +50,11 @@ const uncappedApi = {
   cancelShutdown: () => invoke('cancelShutdown'),
   setLatencyShield: (enabled: boolean) => invoke('setLatencyShield', enabled),
   updateDownloadUrl: (id: string, newUrl: string) => invoke('updateDownloadUrl', id, newUrl),
+  getZoomFactor: () => invoke('getZoomFactor'),
+  setZoomFactor: (factor: number) => {
+    webFrame.setZoomFactor(factor)
+    return invoke('setZoomFactor', factor)
+  },
 
   onShutdownCountdown: (
     callback: (payload: { remainingSeconds: number; action: string } | null) => void
@@ -72,6 +77,33 @@ const uncappedApi = {
     const listener = (): void => callback()
     ipcRenderer.on(IpcChannels.toggleDevToolsPanel, listener)
     return () => ipcRenderer.removeListener(IpcChannels.toggleDevToolsPanel, listener)
+  },
+
+  onZoomChanged: (callback: (factor: number) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, factor: number): void => {
+      webFrame.setZoomFactor(factor)
+      callback(factor)
+    }
+    ipcRenderer.on(IpcChannels.zoomChanged, listener)
+    return () => ipcRenderer.removeListener(IpcChannels.zoomChanged, listener)
+  },
+
+  startUpdateDownload: () => invoke('startUpdateDownload'),
+  installUpdateAndRestart: () => invoke('installUpdateAndRestart'),
+  getWhatsNew: () => invoke('getWhatsNew'),
+  dismissWhatsNew: (version: string) => invoke('dismissWhatsNew', version),
+
+  onUpdateProgress: (callback: (progress: UpdateProgress) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, progress: UpdateProgress): void =>
+      callback(progress)
+    ipcRenderer.on(IpcChannels.updateProgress, listener)
+    return () => ipcRenderer.removeListener(IpcChannels.updateProgress, listener)
+  },
+
+  onUpdateDownloaded: (callback: (info: { version: string }) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, info: { version: string }): void => callback(info)
+    ipcRenderer.on(IpcChannels.updateDownloaded, listener)
+    return () => ipcRenderer.removeListener(IpcChannels.updateDownloaded, listener)
   }
 }
 

@@ -12,6 +12,8 @@ interface AppSettings {
   dismissedUpdateVersion?: string
   lastDownloadDir?: string
   windowState?: WindowModeSettings
+  zoomFactor?: number
+  lastSeenVersion?: string
 }
 
 export interface WindowModeSettings {
@@ -87,6 +89,38 @@ export async function saveWindowState(state: WindowModeSettings): Promise<void> 
   await writeFile(
     settingsPath(),
     JSON.stringify({ ...settings, windowState: state }, null, 2),
+    'utf-8'
+  )
+}
+
+export async function loadZoomFactor(): Promise<number> {
+  const settings = await loadSettings()
+  if (typeof settings.zoomFactor === 'number' && Number.isFinite(settings.zoomFactor)) {
+    return Math.max(0.5, Math.min(2.0, Math.round(settings.zoomFactor * 100) / 100))
+  }
+  return 1.0
+}
+
+export async function saveZoomFactor(zoomFactor: number): Promise<void> {
+  const clamped = Math.max(0.5, Math.min(2.0, Math.round(zoomFactor * 100) / 100))
+  const settings = await loadSettings()
+  await writeFile(
+    settingsPath(),
+    JSON.stringify({ ...settings, zoomFactor: clamped }, null, 2),
+    'utf-8'
+  )
+}
+
+export async function loadLastSeenVersion(): Promise<string | undefined> {
+  const settings = await loadSettings()
+  return settings.lastSeenVersion
+}
+
+export async function saveLastSeenVersion(version: string): Promise<void> {
+  const settings = await loadSettings()
+  await writeFile(
+    settingsPath(),
+    JSON.stringify({ ...settings, lastSeenVersion: version }, null, 2),
     'utf-8'
   )
 }

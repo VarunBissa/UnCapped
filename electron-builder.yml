@@ -24,6 +24,10 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  perMachine: false
 mac:
   target:
     - target: dmg

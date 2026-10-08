@@ -175,6 +175,13 @@ export interface StartSimulatedDownloadRequest {
   assembleSpeedBytesPerSec?: number
 }
 
+export interface UpdateProgress {
+  percent: number
+  bytesPerSecond: number
+  transferred: number
+  total: number
+}
+
 export interface UpdateInfo {
   version: string
   /** Where clicking the notification should take the user — the landing page's downloads. */
@@ -182,6 +189,17 @@ export interface UpdateInfo {
   /** True once the user has dismissed the banner for this exact version (persisted, so it stays
    * dismissed across relaunches) — the app then falls back to a quiet titlebar icon instead. */
   dismissed: boolean
+  releaseNotes?: string
+  releaseDate?: string
+}
+
+export interface WhatsNewItem {
+  version: string
+  title: string
+  date: string
+  features: string[]
+  improvements: string[]
+  fixes: string[]
 }
 
 export interface InitialPaths {

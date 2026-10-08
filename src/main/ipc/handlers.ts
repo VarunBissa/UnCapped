@@ -25,14 +25,23 @@ import { loadNetworkPreferences, saveNetworkPreference } from '../network/prefer
 import {
   loadDismissedUpdateVersion,
   loadLastDownloadDir,
+  loadZoomFactor,
   saveDismissedUpdateVersion,
   saveLastDownloadDir,
-  saveThemeSource
+  saveThemeSource,
+  saveZoomFactor
 } from '../settings'
 import { testKnobs } from '../testKnobs'
 import { checkForUpdate, UPDATE_PAGE_URL } from '../updateCheck'
 import { runComparisonBenchmark } from '../network/benchmark'
 import { cancelShutdown } from '../powerManager'
+import {
+  checkWhatsNew,
+  dismissWhatsNew,
+  initAutoUpdater,
+  installUpdateAndRestart,
+  startUpdateDownload
+} from '../updater'
 
 async function openNetworkSettings(): Promise<void> {
   if (process.platform === 'win32') {
@@ -108,6 +117,19 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
     nativeTheme.themeSource = source
     await saveThemeSource(source)
     return currentThemeSource()
+  })
+
+  handle('getZoomFactor', async () => loadZoomFactor())
+
+  handle('setZoomFactor', async (_event, factor) => {
+    const clamped = Math.max(0.5, Math.min(2.0, Math.round(factor * 100) / 100))
+    await saveZoomFactor(clamped)
+    const window = getWindow()
+    if (window) {
+      window.webContents.setZoomFactor(clamped)
+      window.webContents.send(IpcChannels.zoomChanged, clamped)
+    }
+    return clamped
   })
 
   handle('openNetworkSettings', async () => {
@@ -285,11 +307,21 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
     return { ...info, dismissed: info.version === dismissedVersion }
   })()
 
+  initAutoUpdater(getWindow)
+
   handle('checkForUpdate', async () => updateCheckPromise)
 
   handle('dismissUpdate', async (_event, version) => {
     await saveDismissedUpdateVersion(version)
   })
+
+  handle('startUpdateDownload', async () => startUpdateDownload())
+
+  handle('installUpdateAndRestart', async () => installUpdateAndRestart())
+
+  handle('getWhatsNew', async () => checkWhatsNew())
+
+  handle('dismissWhatsNew', async (_event, version) => dismissWhatsNew(version))
 
   handle('runComparisonSpeedTest', async (_event, testUrl, interfaceIds) => {
     let active = cachedInterfaces.filter((i) => interfaceIds.includes(i.id))

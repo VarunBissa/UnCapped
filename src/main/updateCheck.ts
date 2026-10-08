@@ -36,11 +36,20 @@ export async function checkForUpdate(currentVersion: string): Promise<ReleaseInf
   try {
     const response = await net.fetch(`https://api.github.com/repos/${REPO}/releases?per_page=1`)
     if (!response.ok) return null
-    const [data] = (await response.json()) as { tag_name?: string }[]
+    const [data] = (await response.json()) as {
+      tag_name?: string
+      body?: string
+      published_at?: string
+    }[]
     if (!data?.tag_name) return null
     const version = data.tag_name.replace(/^v/, '')
     if (!isNewer(version, currentVersion)) return null
-    return { version, url: UPDATE_PAGE_URL }
+    return {
+      version,
+      url: UPDATE_PAGE_URL,
+      releaseNotes: data.body,
+      releaseDate: data.published_at
+    }
   } catch {
     // Offline, rate-limited, or GitHub is down — silently skip the notification rather than
     // surface a startup error for a non-essential check.

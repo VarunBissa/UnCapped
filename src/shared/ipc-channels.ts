@@ -30,5 +30,14 @@ export const IpcChannels = {
   cancelShutdown: 'power:cancel-shutdown',
   shutdownCountdown: 'power:shutdown-countdown',
   setLatencyShield: 'download:set-latency-shield',
-  updateDownloadUrl: 'download:update-url'
+  updateDownloadUrl: 'download:update-url',
+  zoomChanged: 'zoom:changed',
+  getZoomFactor: 'zoom:get-factor',
+  setZoomFactor: 'zoom:set-factor',
+  startUpdateDownload: 'update:start-download',
+  installUpdateAndRestart: 'update:install-restart',
+  updateProgress: 'update:progress',
+  updateDownloaded: 'update:downloaded',
+  getWhatsNew: 'update:get-whats-new',
+  dismissWhatsNew: 'update:dismiss-whats-new'
 } as const

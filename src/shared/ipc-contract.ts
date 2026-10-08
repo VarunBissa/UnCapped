@@ -9,7 +9,8 @@ import type {
   StartSimulatedDownloadRequest,
   ThemeSource,
   UpdateInfo,
-  SpeedTestComparisonResult
+  SpeedTestComparisonResult,
+  WhatsNewItem
 } from './types'
 
 /** The request/response half of the IPC surface (every IpcChannels entry except the two
@@ -55,4 +56,10 @@ export interface IpcContract {
   cancelShutdown: { args: []; result: boolean }
   setLatencyShield: { args: [enabled: boolean]; result: boolean }
   updateDownloadUrl: { args: [id: string, newUrl: string]; result: boolean }
+  getZoomFactor: { args: []; result: number }
+  setZoomFactor: { args: [factor: number]; result: number }
+  startUpdateDownload: { args: []; result: boolean }
+  installUpdateAndRestart: { args: []; result: boolean }
+  getWhatsNew: { args: []; result: WhatsNewItem | null }
+  dismissWhatsNew: { args: [version: string]; result: void }
 }

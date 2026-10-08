@@ -4,7 +4,13 @@ import { app, BrowserWindow, Menu, nativeTheme, shell } from 'electron'
 import { join } from 'path'
 import icon from '../../resources/icon-dark.png?asset'
 import { registerIpcHandlers } from './ipc/handlers'
-import { loadThemeSource, loadWindowState, saveWindowState } from './settings'
+import {
+  loadThemeSource,
+  loadWindowState,
+  loadZoomFactor,
+  saveWindowState,
+  saveZoomFactor
+} from './settings'
 import { testKnobs } from './testKnobs'
 import { IpcChannels } from '../shared/ipc-channels'
 import type { DownloadManager } from './download/downloadManager'
@@ -106,6 +112,53 @@ async function createWindow(): Promise<void> {
       preload: join(__dirname, '../preload/index.js'),
       // A hidden e2e window would otherwise have its timers throttled.
       backgroundThrottling: !testKnobs.hideWindow
+    }
+  })
+
+  const initialZoom = await loadZoomFactor()
+  let currentZoom = initialZoom
+
+  mainWindow.webContents.setZoomFactor(initialZoom)
+
+  const setZoom = (factor: number): void => {
+    if (!mainWindow) return
+    currentZoom = Math.max(0.5, Math.min(2.0, Math.round(factor * 100) / 100))
+    mainWindow.webContents.setZoomFactor(currentZoom)
+    void saveZoomFactor(currentZoom)
+    mainWindow.webContents.send(IpcChannels.zoomChanged, currentZoom)
+  }
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (mainWindow) {
+      mainWindow.webContents.setZoomFactor(currentZoom)
+      mainWindow.webContents.send(IpcChannels.zoomChanged, currentZoom)
+    }
+  })
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    const isCtrlOrCmd = process.platform === 'darwin' ? input.meta : input.control
+    if (!isCtrlOrCmd) return
+
+    if (
+      input.key === '+' ||
+      input.key === '=' ||
+      input.code === 'NumpadAdd' ||
+      input.key === 'Add'
+    ) {
+      event.preventDefault()
+      setZoom(currentZoom + 0.1)
+    } else if (
+      input.key === '-' ||
+      input.key === '_' ||
+      input.code === 'NumpadSubtract' ||
+      input.key === 'Subtract'
+    ) {
+      event.preventDefault()
+      setZoom(currentZoom - 0.1)
+    } else if (input.key === '0' || input.code === 'Numpad0') {
+      event.preventDefault()
+      setZoom(1.0)
     }
   })
 

@@ -15,6 +15,8 @@ import { NoConnectionsScreen } from './screens/NoConnectionsScreen'
 import { ShutdownCountdownDialog } from './components/ShutdownCountdownDialog'
 import { ToastContainer } from './components/ToastContainer'
 import { UpdateDialog } from './components/UpdateDialog'
+import { WhatsNewDialog } from './components/WhatsNewDialog'
+import { ZoomIndicator } from './components/ZoomIndicator'
 import { useAppStore } from './store/useAppStore'
 
 function assertNever(status: never): never {
@@ -83,6 +85,7 @@ function App(): React.JSX.Element {
   const loadNetworkPreferences = useAppStore((store) => store.loadNetworkPreferences)
   const loadThemeSource = useAppStore((store) => store.loadThemeSource)
   const loadInitialPaths = useAppStore((store) => store.loadInitialPaths)
+  const loadZoomFactor = useAppStore((store) => store.loadZoomFactor)
   const activeView = useAppStore((store) => store.activeView)
   const setActiveView = useAppStore((store) => store.setActiveView)
   const selectedDownload = useAppStore((store) => store.selectedDownload)
@@ -90,13 +93,23 @@ function App(): React.JSX.Element {
   const selectDownloadForDetail = useAppStore((store) => store.selectDownloadForDetail)
 
   const checkForUpdate = useAppStore((store) => store.checkForUpdate)
+  const checkWhatsNew = useAppStore((store) => store.checkWhatsNew)
 
   useEffect(() => {
     loadNetworkPreferences()
     loadThemeSource()
     loadInitialPaths()
+    loadZoomFactor()
     checkForUpdate()
-  }, [loadNetworkPreferences, loadThemeSource, loadInitialPaths, checkForUpdate])
+    checkWhatsNew()
+  }, [
+    loadNetworkPreferences,
+    loadThemeSource,
+    loadInitialPaths,
+    loadZoomFactor,
+    checkForUpdate,
+    checkWhatsNew
+  ])
 
   const handleNewDownload = (): void => {
     if (currentDownload) void window.uncapped.removeDownload(currentDownload.id)
@@ -178,6 +191,8 @@ function App(): React.JSX.Element {
         <ShutdownCountdownDialog />
         <ToastContainer />
         <UpdateDialog />
+        <WhatsNewDialog />
+        <ZoomIndicator />
       </div>
     </TooltipProvider>
   )

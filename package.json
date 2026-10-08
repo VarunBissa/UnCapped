@@ -1,6 +1,6 @@
 {
   "name": "uncapped",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "overrides": {
     "@noble/hashes": "1.8.0"
   },
@@ -37,6 +37,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
+    "electron-updater": "^6.8.9",
     "koffi": "^2.16.3",
     "lucide-react": "^1.47.0",
     "webtorrent": "^3.0.21",
