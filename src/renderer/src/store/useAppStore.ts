@@ -205,6 +205,8 @@ interface AppStore {
   installUpdateAndRestart: () => void
   checkWhatsNew: () => Promise<void>
   dismissWhatsNew: () => void
+  triggerSimulatedUpdate: () => void
+  triggerSimulatedWhatsNew: () => void
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -496,6 +498,46 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (item?.version) {
       void window.uncapped.dismissWhatsNew(item.version)
     }
+  },
+
+  triggerSimulatedUpdate: () => {
+    set({
+      availableUpdate: {
+        version: '1.0.2',
+        url: 'https://github.com/VarunBissa/UnCapped/releases',
+        releaseNotes: '• UI Font & Element Scaling (Ctrl+ / Ctrl-)\n• NSIS Custom Installation Directory\n• In-App Background Auto-Updates\n• Post-Update What\'s New Screen',
+        dismissed: false
+      },
+      appUpdateStatus: 'idle',
+      updateProgress: null
+    })
+  },
+
+  triggerSimulatedWhatsNew: () => {
+    set({
+      whatsNew: {
+        version: '1.0.1',
+        title: "What's New in UnCapped v1.0.1",
+        description: 'Here are the key improvements and additions in this update:',
+        highlights: [
+          {
+            category: 'feature',
+            title: 'Dynamic UI Scaling',
+            description: 'Press Ctrl + / Ctrl - to zoom the entire UI in and out. Press Ctrl + 0 to reset.'
+          },
+          {
+            category: 'feature',
+            title: 'Custom Install Directory',
+            description: 'The Windows installer now allows picking any custom installation folder.'
+          },
+          {
+            category: 'improvement',
+            title: 'Seamless In-App Updates',
+            description: 'Download and install future updates directly inside UnCapped with live progress.'
+          }
+        ]
+      }
+    })
   },
 
   setCurrentDownload: (download) => {

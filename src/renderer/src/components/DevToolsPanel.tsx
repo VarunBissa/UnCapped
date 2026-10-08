@@ -53,6 +53,8 @@ export function DevToolsPanel(): React.JSX.Element | null {
   const isDev = useAppStore((store) => store.isDev)
   const downloadsDir = useAppStore((store) => store.downloadsDir)
   const homeDir = useAppStore((store) => store.homeDir)
+  const triggerSimulatedUpdate = useAppStore((store) => store.triggerSimulatedUpdate)
+  const triggerSimulatedWhatsNew = useAppStore((store) => store.triggerSimulatedWhatsNew)
 
   const [open, setOpen] = useState(false)
   const [sourceFilePath, setSourceFilePath] = useState<string | null>(null)
@@ -356,6 +358,39 @@ export function DevToolsPanel(): React.JSX.Element | null {
               MB/s
             </label>
           )}
+        </div>
+
+        <div className={draftBoxClass}>
+          <div className={fieldLabelClass}>AUTO-UPDATE TEST HARNESS</div>
+          <div className="font-sans text-[10.5px] leading-[1.4] text-muted-foreground">
+            Test the in-app update experience: live progress bar, speed/MB metrics, restart & install notice, and post-update What&apos;s New modal.
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="flex-1 text-[11px] cursor-pointer"
+              onClick={() => {
+                triggerSimulatedUpdate()
+                setOpen(false)
+              }}
+            >
+              Test Update Dialog
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="flex-1 text-[11px] cursor-pointer"
+              onClick={() => {
+                triggerSimulatedWhatsNew()
+                setOpen(false)
+              }}
+            >
+              Test What&apos;s New
+            </Button>
+          </div>
         </div>
 
         {error && (

@@ -69,6 +69,9 @@ export async function startUpdateDownload(): Promise<boolean> {
       return true
     }
 
+    isDownloadInProgress = true
+    // electron-updater requires checkForUpdates() to establish updateInfoAndProvider before downloadUpdate()
+    await autoUpdater.checkForUpdates()
     await autoUpdater.downloadUpdate()
     return true
   } catch (err) {
