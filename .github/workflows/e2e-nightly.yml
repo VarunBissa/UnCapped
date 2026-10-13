@@ -4,8 +4,6 @@ name: E2E nightly
 # platforms, with the race-prone tests repeated so an intermittent failure shows up here
 # rather than in someone's download.
 on:
-  schedule:
-    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       chaos_runs:
