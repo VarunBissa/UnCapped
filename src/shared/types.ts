@@ -124,6 +124,17 @@ export interface SpeedTestComparisonResult {
   timestamp: number
 }
 
+export interface BenchmarkProgress {
+  phase: 'solo' | 'bonded'
+  currentInterfaceId?: string
+  currentDisplayName?: string
+  currentSpeedBytesPerSec: number
+  elapsedMs: number
+  totalDurationMs: number
+  phaseIndex: number
+  totalPhases: number
+}
+
 export type SpeedLimitMode = 'unlimited' | 'capped'
 export type DataCapMode = 'unlimited' | 'capped'
 export type MeteredMode = 'unmetered' | 'metered'

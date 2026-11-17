@@ -329,7 +329,10 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
       await refreshInterfaces()
       active = cachedInterfaces.filter((i) => interfaceIds.includes(i.id))
     }
-    return runComparisonBenchmark(testUrl, active)
+    const win = getWindow()
+    return runComparisonBenchmark(testUrl, active, (progress) => {
+      win?.webContents.send(IpcChannels.benchmarkProgress, progress)
+    })
   })
 
   handle('cancelShutdown', async () => {

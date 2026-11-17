@@ -505,7 +505,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       availableUpdate: {
         version: '1.0.2',
         url: 'https://github.com/VarunBissa/UnCapped/releases',
-        releaseNotes: '• UI Font & Element Scaling (Ctrl+ / Ctrl-)\n• NSIS Custom Installation Directory\n• In-App Background Auto-Updates\n• Post-Update What\'s New Screen',
+        releaseNotes:
+          "• UI Font & Element Scaling (Ctrl+ / Ctrl-)\n• NSIS Custom Installation Directory\n• In-App Background Auto-Updates\n• Post-Update What's New Screen",
         dismissed: false
       },
       appUpdateStatus: 'idle',
@@ -516,25 +517,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
   triggerSimulatedWhatsNew: () => {
     set({
       whatsNew: {
-        version: '1.0.1',
-        title: "What's New in UnCapped v1.0.1",
-        description: 'Here are the key improvements and additions in this update:',
-        highlights: [
-          {
-            category: 'feature',
-            title: 'Dynamic UI Scaling',
-            description: 'Press Ctrl + / Ctrl - to zoom the entire UI in and out. Press Ctrl + 0 to reset.'
-          },
-          {
-            category: 'feature',
-            title: 'Custom Install Directory',
-            description: 'The Windows installer now allows picking any custom installation folder.'
-          },
-          {
-            category: 'improvement',
-            title: 'Seamless In-App Updates',
-            description: 'Download and install future updates directly inside UnCapped with live progress.'
-          }
+        version: '1.0.2',
+        title: 'Network Reliability & Speed Test Fixes',
+        date: 'November 2026',
+        features: [],
+        improvements: [],
+        fixes: [
+          'Resolved speed test benchmark socket hang-ups and timeouts by replacing dead mirrors with ultra-fast global CDNs.',
+          'Fixed dual-adapter network probe timeout and IPv6 stalls across Wi-Fi and mobile USB tethering.',
+          'Enforced dedicated network interface socket binding preventing cross-connection pool conflicts.',
+          'Added 1-click verified Sample Links directly in the link bar for instant test downloads.'
         ]
       }
     })

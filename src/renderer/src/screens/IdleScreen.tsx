@@ -1,12 +1,13 @@
 import { planDownload } from '@shared/plan'
 import type { CompletionAction, ProbeResult } from '@shared/types'
 import { cn } from 'cn'
-import { AlertTriangle, ClipboardPaste, Clock, FileUp, Moon, Power } from 'lucide-react'
+import { AlertTriangle, ClipboardPaste, Clock, FileUp, Moon, Power, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { NetworkCard } from '../components/NetworkCard'
 import { ScreenFooter } from '../components/ScreenFooter'
 import { Alert, AlertDescription } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group'
 import { useNetworkPolling } from '../hooks/useNetworkPolling'
 import { useAppStore } from '../store/useAppStore'
@@ -21,6 +22,51 @@ type ProbeState =
 const PROBE_DEBOUNCE_MS = 600
 const PRESET_STREAMS = [1, 2, 4, 8] as const
 const PASTE_SHORTCUT = window.uncapped.platform === 'darwin' ? '⌘V' : 'Ctrl+V'
+
+const VERIFIED_SAMPLE_FILES = [
+  {
+    name: 'Google Chrome Standalone Installer',
+    size: '170 MB',
+    category: 'Software',
+    url: 'https://dl.google.com/chrome/install/ChromeStandaloneSetup64.exe'
+  },
+  {
+    name: 'Node.js LTS Installer (v22)',
+    size: '31 MB',
+    category: 'Software',
+    url: 'https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi'
+  },
+  {
+    name: 'Python 3.12 64-bit Installer',
+    size: '27 MB',
+    category: 'Software',
+    url: 'https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe'
+  },
+  {
+    name: 'Linux Kernel 6.12 Source',
+    size: '148 MB',
+    category: 'Source',
+    url: 'https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.tar.xz'
+  },
+  {
+    name: 'Ubuntu 24.04 Server Cloud Image',
+    size: '621 MB',
+    category: 'OS Image',
+    url: 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img'
+  },
+  {
+    name: 'AlmaLinux 9 Minimal ISO',
+    size: '3.0 GB',
+    category: 'OS Image',
+    url: 'https://repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9-latest-x86_64-minimal.iso'
+  },
+  {
+    name: 'Ubuntu 24.04 Desktop ISO',
+    size: '6.6 GB',
+    category: 'OS Image',
+    url: 'https://releases.ubuntu.com/noble/ubuntu-24.04.4-desktop-amd64.iso'
+  }
+]
 
 const fieldLabelClass = 'shrink-0 font-mono text-[10px] tracking-[0.14em] text-muted-foreground'
 
@@ -357,6 +403,52 @@ export function IdleScreen(): React.JSX.Element {
               <FileUp data-icon="inline-start" />
               <span>Select .torrent</span>
             </Button>
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="xs"
+                    className="shrink-0 font-mono text-[9px] sm:text-[9.5px] uppercase tracking-wide px-2 sm:px-2.5"
+                    title="Select a verified test file"
+                  >
+                    <Sparkles
+                      data-icon="inline-start"
+                      className="size-3 text-amber-500 fill-amber-500"
+                    />
+                    <span>Sample Links</span>
+                  </Button>
+                }
+              />
+              <PopoverContent align="end" className="w-80 p-2.5">
+                <div className="font-mono text-[10px] uppercase tracking-wider font-semibold text-muted-foreground pb-1.5 border-b border-border">
+                  Verified Test Downloads
+                </div>
+                <div className="flex flex-col gap-1 max-h-60 overflow-y-auto pt-1">
+                  {VERIFIED_SAMPLE_FILES.map((sample) => (
+                    <button
+                      key={sample.url}
+                      type="button"
+                      onClick={() => setUrl(sample.url)}
+                      className="flex items-center justify-between gap-2 rounded-md p-2 text-left hover:bg-muted transition-colors cursor-pointer"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-sans text-[12px] font-semibold text-foreground truncate">
+                          {sample.name}
+                        </div>
+                        <div className="font-mono text-[10px] text-muted-foreground truncate">
+                          {sample.category}
+                        </div>
+                      </div>
+                      <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-foreground">
+                        {sample.size}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
           <Button
             type="button"

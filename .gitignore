@@ -43,3 +43,7 @@ coverage/
 scratch/
 test_dir*/
 tmp/
+
+# GSD Workflow files
+.gsd/
+.gemini/

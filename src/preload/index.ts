@@ -1,7 +1,13 @@
 import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from 'electron'
 import { IpcChannels } from '../shared/ipc-channels'
 import type { IpcContract } from '../shared/ipc-contract'
-import { DownloadState, NetworkPreference, ThemeSource, UpdateProgress } from '../shared/types'
+import {
+  BenchmarkProgress,
+  DownloadState,
+  NetworkPreference,
+  ThemeSource,
+  UpdateProgress
+} from '../shared/types'
 
 /** Typed wrapper around ipcRenderer.invoke — the channel name picks its args/result shape out of
  * IpcContract, so a call here that doesn't match what registerIpcHandlers (main) actually handles
@@ -45,7 +51,7 @@ const uncappedApi = {
     invoke('deleteDownload', downloadId, filePath, permanent, fileName),
   checkForUpdate: () => invoke('checkForUpdate'),
   dismissUpdate: (version: string) => invoke('dismissUpdate', version),
-  runComparisonSpeedTest: (testUrl: string, interfaceIds: string[]) =>
+  runComparisonSpeedTest: (testUrl: string | string[], interfaceIds: string[]) =>
     invoke('runComparisonSpeedTest', testUrl, interfaceIds),
   cancelShutdown: () => invoke('cancelShutdown'),
   setLatencyShield: (enabled: boolean) => invoke('setLatencyShield', enabled),
@@ -104,6 +110,13 @@ const uncappedApi = {
     const listener = (_event: IpcRendererEvent, info: { version: string }): void => callback(info)
     ipcRenderer.on(IpcChannels.updateDownloaded, listener)
     return () => ipcRenderer.removeListener(IpcChannels.updateDownloaded, listener)
+  },
+
+  onBenchmarkProgress: (callback: (progress: BenchmarkProgress) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, progress: BenchmarkProgress): void =>
+      callback(progress)
+    ipcRenderer.on(IpcChannels.benchmarkProgress, listener)
+    return () => ipcRenderer.removeListener(IpcChannels.benchmarkProgress, listener)
   }
 }
 

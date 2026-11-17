@@ -1,6 +1,6 @@
 {
   "name": "uncapped",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "overrides": {
     "@noble/hashes": "1.8.0"
   },

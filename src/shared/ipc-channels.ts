@@ -27,6 +27,7 @@ export const IpcChannels = {
   checkForUpdate: 'update:check',
   dismissUpdate: 'update:dismiss',
   runComparisonSpeedTest: 'benchmark:run-comparison',
+  benchmarkProgress: 'benchmark:progress',
   cancelShutdown: 'power:cancel-shutdown',
   shutdownCountdown: 'power:shutdown-countdown',
   setLatencyShield: 'download:set-latency-shield',

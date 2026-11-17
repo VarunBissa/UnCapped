@@ -40,7 +40,8 @@ export function getAgentsForInterface(localAddress: string): {
       maxSockets: 32,
       maxFreeSockets: 16,
       timeout: STALL_TIMEOUT_MS,
-      localAddress: localAddress || undefined
+      localAddress: localAddress || undefined,
+      family: 4
     }
     entry = {
       http: new HttpAgent(opts),
@@ -241,7 +242,10 @@ export function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
 
     // The whole file from the start needs no Range at all — and an empty file would answer
     // `bytes=0-` with 416, since it has no byte 0 to start from.
-    const headers: Record<string, string> = { 'User-Agent': 'UnCapped/1.0' }
+    const headers: Record<string, string> = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 UnCapped/1.0'
+    }
     if (rangeStart > 0 || rangeEnd !== null) {
       headers['Range'] =
         rangeEnd === null ? `bytes=${rangeStart}-` : `bytes=${rangeStart}-${rangeEnd}`

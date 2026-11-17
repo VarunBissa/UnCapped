@@ -2,6 +2,19 @@ import type { WhatsNewItem } from './types'
 
 export const CHANGELOG_HISTORY: WhatsNewItem[] = [
   {
+    version: '1.0.2',
+    title: 'Network Reliability & Speed Test Fixes',
+    date: 'November 2026',
+    features: [],
+    improvements: [],
+    fixes: [
+      'Resolved speed test benchmark socket hang-ups and timeouts by replacing dead mirrors with ultra-fast global CDNs.',
+      'Fixed dual-adapter network probe timeout and IPv6 stalls across Wi-Fi and mobile USB tethering.',
+      'Enforced dedicated network interface socket binding preventing cross-connection pool conflicts.',
+      'Added 1-click verified Sample Links directly in the link bar for instant test downloads.'
+    ]
+  },
+  {
     version: '1.0.1',
     title: 'Dynamic UI Scaling, Custom Installer Path & In-App Auto-Updates',
     date: 'October 2026',

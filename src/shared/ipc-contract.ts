@@ -50,7 +50,7 @@ export interface IpcContract {
   checkForUpdate: { args: []; result: UpdateInfo | null }
   dismissUpdate: { args: [version: string]; result: void }
   runComparisonSpeedTest: {
-    args: [testUrl: string, interfaceIds: string[]]
+    args: [testUrl: string | string[], interfaceIds: string[]]
     result: SpeedTestComparisonResult
   }
   cancelShutdown: { args: []; result: boolean }

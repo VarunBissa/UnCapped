@@ -8,10 +8,11 @@ import type { ProbeResult } from '../../shared/types'
 import { testKnobs } from '../testKnobs'
 
 const MAX_REDIRECTS = 5
-const USER_AGENT = 'UnCapped/1.0'
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 UnCapped/1.0'
 // A server that accepts the connection and never answers would otherwise hang the probe — and
 // the link field's "Checking…" — forever. Same budget as a stalled chunk.
-const PROBE_TIMEOUT_MS = testKnobs.stallTimeoutMs
+const PROBE_TIMEOUT_MS = 8000
 
 type Headers = Record<string, string | string[] | undefined>
 
@@ -25,18 +26,24 @@ interface ProbeResponse {
   headers: Headers
 }
 
-/** GET with a 1-byte range: cheaper than fetching the body, and unlike HEAD it
+/** GET with a 1-byte range (or HEAD fallback): cheaper than fetching the body, and unlike HEAD it
  * also tells us (via the 206 status) whether range requests actually work. */
-function requestOneByte(url: URL): Promise<ProbeResponse> {
+function requestOneByte(url: URL, method: 'GET' | 'HEAD' = 'GET'): Promise<ProbeResponse> {
   return new Promise((resolve, reject) => {
     const requester = url.protocol === 'https:' ? httpsRequest : httpRequest
     const req = requester(
       {
-        method: 'GET',
+        method,
         hostname: url.hostname,
         port: url.port || undefined,
         path: `${url.pathname}${url.search}`,
-        headers: { 'User-Agent': USER_AGENT, Range: 'bytes=0-0' }
+        family: 4,
+        headers: {
+          'User-Agent': USER_AGENT,
+          ...(method === 'GET' ? { Range: 'bytes=0-0' } : {}),
+          Accept: '*/*',
+          Connection: 'close'
+        }
       },
       (res) => {
         res.destroy()
@@ -110,8 +117,17 @@ async function requestFollowingRedirects(
   let response: ProbeResponse | null = null
 
   for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect += 1) {
-    response = await requestOneByte(current)
-    if (response.statusCode >= 300 && response.statusCode < 400) {
+    try {
+      response = await requestOneByte(current, 'GET')
+    } catch (err) {
+      // If 1-byte GET timed out or was rejected, fallback to a HEAD probe
+      try {
+        response = await requestOneByte(current, 'HEAD')
+      } catch {
+        throw err
+      }
+    }
+    if (response && response.statusCode >= 300 && response.statusCode < 400) {
       const location = headerValue(response.headers, 'location')
       if (!location) break
       current = new URL(location, current)

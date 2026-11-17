@@ -1,4 +1,9 @@
-import type { NetworkInterfaceInfo, ProbeResult, SpeedTestComparisonResult } from '@shared/types'
+import type {
+  BenchmarkProgress,
+  NetworkInterfaceInfo,
+  ProbeResult,
+  SpeedTestComparisonResult
+} from '@shared/types'
 import {
   AlertCircle,
   CheckCircle2,
@@ -9,7 +14,7 @@ import {
   TrendingUp,
   Zap
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNetworkVisuals } from '../hooks/useNetworkVisuals'
 import { useAppStore } from '../store/useAppStore'
 import { formatBytes, formatSpeed } from '../utils/format'
@@ -33,8 +38,8 @@ const SPEED_OPTIONS: SpeedOption[] = [
     sizeMb: 10,
     sizeLabel: '10MB',
     urls: [
-      'https://speedtest.mumbai1.linode.com/100MB-mumbai.bin',
-      'https://proof.ovh.net/files/10Mb.dat'
+      'https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe',
+      'https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi'
     ],
     description: 'Quick check (~1-2s)'
   },
@@ -44,12 +49,10 @@ const SPEED_OPTIONS: SpeedOption[] = [
     sizeMb: 100,
     sizeLabel: '100MB',
     urls: [
-      'https://speedtest.mumbai1.linode.com/100MB-mumbai.bin',
-      'https://speedtest.singapore.linode.com/100MB-singapore.bin',
-      'https://speedtest.frankfurt.linode.com/100MB-frankfurt.bin',
-      'https://proof.ovh.net/files/100Mb.dat'
+      'https://dl.google.com/chrome/install/ChromeStandaloneSetup64.exe',
+      'https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.tar.xz'
     ],
-    description: 'Quick check — too short to max out fast bonds'
+    description: 'Standard bonded test'
   },
   {
     id: '1gb',
@@ -57,16 +60,104 @@ const SPEED_OPTIONS: SpeedOption[] = [
     sizeMb: 1000,
     sizeLabel: '1GB',
     urls: [
-      'https://speedtest.mumbai1.linode.com/1GB-mumbai.bin',
-      'https://speedtest.singapore.linode.com/1GB-singapore.bin',
-      'https://speedtest.frankfurt.linode.com/1GB-frankfurt.bin',
-      'https://proof.ovh.net/files/1Gb.dat'
+      'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img',
+      'https://repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9-latest-x86_64-minimal.iso'
     ],
-    description: 'Bonded test (Recommended)'
+    description: 'High-bandwidth stress test'
   }
 ]
 
 const SPEED_TEST_STREAMS_PER_NETWORK = 6
+
+function LiveSpeedGauge({
+  progress,
+  statusText
+}: {
+  progress: BenchmarkProgress | null
+  statusText: string | null
+}): React.JSX.Element {
+  const speedBytes = progress?.currentSpeedBytesPerSec || 0
+  const mbps = ((speedBytes * 8) / 1_000_000).toFixed(1)
+  const isBonded = progress?.phase === 'bonded'
+  const percentTime = progress
+    ? Math.min(100, Math.round((progress.elapsedMs / progress.totalDurationMs) * 100))
+    : 0
+
+  // Gauge percent scaled up to 60 MB/s (~480 Mbps)
+  const maxScaleBytes = 60 * 1024 * 1024
+  const gaugePercent = Math.min(100, Math.max(3, Math.round((speedBytes / maxScaleBytes) * 100)))
+
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-primary/40 bg-card p-4 shadow-sm animate-in fade-in zoom-in-95">
+      <div className="flex items-center gap-2">
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[10px] font-semibold tracking-wider uppercase ${
+            isBonded
+              ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+              : 'bg-primary/15 text-primary border border-primary/30'
+          }`}
+        >
+          <span className="size-1.5 rounded-full bg-current animate-ping" />
+          {isBonded
+            ? '⚡ Bonded Aggregate Test'
+            : `Phase ${progress?.phaseIndex || 1} of ${progress?.totalPhases || 3}: Solo Test`}
+        </span>
+      </div>
+
+      <div className="font-sans text-[12px] font-medium text-foreground text-center truncate max-w-xs">
+        {progress?.currentDisplayName || statusText || 'Sampling network throughput…'}
+      </div>
+
+      {/* Semicircular Speed Gauge Meter */}
+      <div className="relative flex flex-col items-center justify-center my-0.5">
+        <svg className="w-52 h-26 overflow-visible" viewBox="0 0 200 100">
+          <path
+            d="M 25 100 A 75 75 0 0 1 175 100"
+            fill="none"
+            stroke="var(--border)"
+            strokeWidth="12"
+            strokeLinecap="round"
+          />
+          <path
+            d="M 25 100 A 75 75 0 0 1 175 100"
+            fill="none"
+            stroke={isBonded ? '#10b981' : '#3b82f6'}
+            strokeWidth="12"
+            strokeLinecap="round"
+            strokeDasharray="235.6"
+            strokeDashoffset={235.6 - (235.6 * gaugePercent) / 100}
+            className="transition-all duration-150 ease-out"
+          />
+        </svg>
+
+        <div className="absolute bottom-1 flex flex-col items-center text-center">
+          <span className="font-mono text-2xl font-black tracking-tight text-foreground">
+            {formatSpeed(speedBytes)}
+          </span>
+          <span className="font-mono text-[11px] font-semibold text-emerald-500 flex items-center gap-0.5">
+            <Zap className="size-3 fill-current" /> {mbps} Mbps
+          </span>
+        </div>
+      </div>
+
+      {/* Phase progress line */}
+      <div className="w-full space-y-1">
+        <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+          <span>Sampling throughput</span>
+          <span>{percentTime}%</span>
+        </div>
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+          <div
+            className={`h-full transition-all duration-150 ease-out ${
+              isBonded ? 'bg-emerald-500' : 'bg-primary'
+            }`}
+            style={{ width: `${percentTime}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export function SpeedTestButton(): React.JSX.Element {
   const [open, setOpen] = useState(false)
@@ -77,6 +168,19 @@ export function SpeedTestButton(): React.JSX.Element {
   const [benchmarkMode, setBenchmarkMode] = useState<'standard' | 'benchmark'>('benchmark')
   const [comparisonResult, setComparisonResult] = useState<SpeedTestComparisonResult | null>(null)
   const [benchmarkStatus, setBenchmarkStatus] = useState<string | null>(null)
+  const [liveProgress, setLiveProgress] = useState<BenchmarkProgress | null>(null)
+
+  useEffect(() => {
+    if (!testing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLiveProgress(null)
+      return
+    }
+    const unsub = window.uncapped.onBenchmarkProgress?.((prog) => {
+      setLiveProgress(prog)
+    })
+    return () => unsub?.()
+  }, [testing])
 
   const interfaces = useAppStore((store) => store.interfaces)
   const loadInterfaces = useAppStore((store) => store.loadInterfaces)
@@ -143,7 +247,10 @@ export function SpeedTestButton(): React.JSX.Element {
 
       for (const url of selectedSize.urls) {
         try {
-          probe = await window.uncapped.probeUrl(url)
+          const timeoutPromise = new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error('Candidate timeout')), 3500)
+          )
+          probe = await Promise.race([window.uncapped.probeUrl(url), timeoutPromise])
           if (probe) break
         } catch (err) {
           lastErr = err instanceof Error ? err : new Error(String(err))
@@ -197,20 +304,8 @@ export function SpeedTestButton(): React.JSX.Element {
     setBenchmarkStatus('Connecting & sampling interfaces…')
 
     try {
-      let testUrl = selectedSize.urls[0]
-      for (const u of selectedSize.urls) {
-        try {
-          const probe = await window.uncapped.probeUrl(u)
-          if (probe && probe.finalUrl) {
-            testUrl = probe.finalUrl
-            break
-          }
-        } catch {
-          // Probe next candidate
-        }
-      }
-      setBenchmarkStatus('Sampling individual networks & bonded aggregate…')
-      const result = await window.uncapped.runComparisonSpeedTest(testUrl, selectedIds)
+      setBenchmarkStatus('Connecting & sampling interfaces…')
+      const result = await window.uncapped.runComparisonSpeedTest(selectedSize.urls, selectedIds)
       setComparisonResult(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to complete benchmark')
@@ -290,8 +385,13 @@ export function SpeedTestButton(): React.JSX.Element {
           </div>
         )}
 
+        {/* Live Speed Meter Gauge when Benchmark is Running */}
+        {testing && benchmarkMode === 'benchmark' && (
+          <LiveSpeedGauge progress={liveProgress} statusText={benchmarkStatus} />
+        )}
+
         {/* Comparison Benchmark Result Card */}
-        {comparisonResult && (
+        {comparisonResult && !testing && (
           <div className="flex flex-col gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-3.5 animate-in fade-in">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-emerald-500 font-semibold font-mono text-[11px] uppercase tracking-wider">

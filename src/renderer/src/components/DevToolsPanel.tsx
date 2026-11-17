@@ -363,7 +363,8 @@ export function DevToolsPanel(): React.JSX.Element | null {
         <div className={draftBoxClass}>
           <div className={fieldLabelClass}>AUTO-UPDATE TEST HARNESS</div>
           <div className="font-sans text-[10.5px] leading-[1.4] text-muted-foreground">
-            Test the in-app update experience: live progress bar, speed/MB metrics, restart & install notice, and post-update What&apos;s New modal.
+            Test the in-app update experience: live progress bar, speed/MB metrics, restart &
+            install notice, and post-update What&apos;s New modal.
           </div>
           <div className="flex gap-2">
             <Button
